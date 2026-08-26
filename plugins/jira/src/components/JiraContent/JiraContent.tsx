@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import useAsyncRetry from 'react-use/esm/useAsyncRetry';
 import { useApi } from '@backstage/frontend-plugin-api';
 import { useEntity } from '@backstage/plugin-catalog-react';
@@ -9,20 +9,34 @@ import {
   CellText,
   Flex,
   Link,
+  SearchField,
   Select,
   Table,
   Text,
 } from '@backstage/ui';
-import type { ColumnConfig } from '@backstage/ui';
+import type { ColumnConfig, SortDescriptor } from '@backstage/ui';
 import { jiraApiRef } from '../../api';
-import { JiraFilterInfo, JiraIssue } from '../../types';
+import {
+  JiraFilterInfo,
+  JiraIssue,
+  SORT_FIELDS,
+  SortField,
+  SortOrder,
+} from '../../types';
 
 type IssueRow = JiraIssue & { id: string };
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+const sortable = (id: string) =>
+  SORT_FIELDS.includes(id as SortField) ? { isSortable: true } : {};
 
 const columnConfig: readonly ColumnConfig<IssueRow>[] = [
   {
     id: 'key',
     label: 'Key',
+    isRowHeader: true,
+    ...sortable('key'),
     cell: issue => (
       <Cell>
         <Link href={issue.url} target="_blank" rel="noopener">
@@ -34,6 +48,7 @@ const columnConfig: readonly ColumnConfig<IssueRow>[] = [
   {
     id: 'summary',
     label: 'Summary',
+    ...sortable('summary'),
     cell: issue => <CellText title={issue.summary} />,
   },
   {
@@ -44,11 +59,13 @@ const columnConfig: readonly ColumnConfig<IssueRow>[] = [
   {
     id: 'status',
     label: 'Status',
+    ...sortable('status'),
     cell: issue => <CellText title={issue.status.name ?? '—'} />,
   },
   {
     id: 'priority',
     label: 'Priority',
+    ...sortable('priority'),
     cell: issue => <CellText title={issue.priority.name ?? '—'} />,
   },
   {
@@ -61,6 +78,7 @@ const columnConfig: readonly ColumnConfig<IssueRow>[] = [
   {
     id: 'updated',
     label: 'Updated',
+    ...sortable('updated'),
     cell: issue => (
       <CellText
         title={issue.updated ? new Date(issue.updated).toLocaleString() : '—'}
@@ -69,24 +87,51 @@ const columnConfig: readonly ColumnConfig<IssueRow>[] = [
   },
 ];
 
+interface IssueQuery {
+  filterId?: string;
+  sortBy?: SortField;
+  order?: SortOrder;
+  search?: string;
+  startAt: number;
+}
+
 export const JiraContent = () => {
   const { entity } = useEntity();
   const jiraApi = useApi(jiraApiRef);
   const entityRef = stringifyEntityRef(entity);
 
-  // undefined until the user picks one; the backend then applies its default.
-  const [filterId, setFilterId] = useState<string | undefined>(undefined);
+  // filterId/sortBy/order stay undefined until the user picks them, letting
+  // the backend apply its defaults. Any non-paging change resets startAt.
+  const [query, setQuery] = useState<IssueQuery>({ startAt: 0 });
+  const [searchInput, setSearchInput] = useState('');
   // The last seen filter list, so the control stays rendered while reloading.
   const [filters, setFilters] = useState<JiraFilterInfo[]>([]);
 
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setQuery(prev => {
+        const search = searchInput.trim() || undefined;
+        return search === prev.search ? prev : { ...prev, search, startAt: 0 };
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
   const { value, loading, error, retry } = useAsyncRetry(async () => {
-    const response = await jiraApi.getIssues({ entityRef, filter: filterId });
+    const response = await jiraApi.getIssues({
+      entityRef,
+      filter: query.filterId,
+      sortBy: query.sortBy,
+      order: query.order,
+      search: query.search,
+      startAt: query.startAt,
+    });
     setFilters(response.filters);
     return response;
-  }, [jiraApi, entityRef, filterId]);
+  }, [jiraApi, entityRef, query]);
 
   const selectedFilter =
-    filterId ?? value?.appliedFilter ?? filters.find(f => f.default)?.id;
+    query.filterId ?? value?.appliedFilter ?? filters.find(f => f.default)?.id;
 
   const filterOptions = useMemo(
     () => filters.map(f => ({ id: f.id, label: f.name })),
@@ -95,9 +140,44 @@ export const JiraContent = () => {
 
   const onFilterChange = useCallback((key: string | number | null) => {
     if (typeof key === 'string') {
-      setFilterId(key);
+      setQuery(prev => ({ ...prev, filterId: key, startAt: 0 }));
     }
   }, []);
+
+  const sortDescriptor: SortDescriptor | null = query.sortBy
+    ? {
+        column: query.sortBy,
+        direction: query.order === 'asc' ? 'ascending' : 'descending',
+      }
+    : { column: 'updated', direction: 'descending' };
+
+  const onSortChange = useCallback((descriptor: SortDescriptor) => {
+    const column = String(descriptor.column) as SortField;
+    if (!SORT_FIELDS.includes(column)) {
+      return;
+    }
+    setQuery(prev => ({
+      ...prev,
+      sortBy: column,
+      order: descriptor.direction === 'ascending' ? 'asc' : 'desc',
+      startAt: 0,
+    }));
+  }, []);
+
+  const total = value?.total ?? 0;
+  const pageSize = value?.pageSize ?? 50;
+  const startAt = value?.startAt ?? query.startAt;
+
+  const onNextPage = useCallback(() => {
+    setQuery(prev => ({ ...prev, startAt: prev.startAt + pageSize }));
+  }, [pageSize]);
+
+  const onPreviousPage = useCallback(() => {
+    setQuery(prev => ({
+      ...prev,
+      startAt: Math.max(0, prev.startAt - pageSize),
+    }));
+  }, [pageSize]);
 
   const rows: IssueRow[] | undefined = value?.issues.map(issue => ({
     ...issue,
@@ -115,24 +195,53 @@ export const JiraContent = () => {
 
   return (
     <Flex direction="column" gap="4" p="4">
-      {filterOptions.length > 0 && (
-        <Flex align="center" gap="2" style={{ maxWidth: 320 }}>
-          <Select
-            name="jira-filter"
-            label="Filter"
-            options={filterOptions}
-            selectedKey={selectedFilter ?? null}
-            onSelectionChange={onFilterChange}
+      <Flex align="end" gap="2">
+        {filterOptions.length > 0 && (
+          <div style={{ minWidth: 220 }}>
+            <Select
+              name="jira-filter"
+              label="Filter"
+              options={filterOptions}
+              selectedKey={selectedFilter ?? null}
+              onSelectionChange={onFilterChange}
+            />
+          </div>
+        )}
+        <div style={{ minWidth: 260 }}>
+          <SearchField
+            name="jira-search"
+            label="Search"
+            placeholder="Search summaries"
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={() => setSearchInput('')}
           />
-        </Flex>
-      )}
+        </div>
+      </Flex>
       <Table<IssueRow>
         columnConfig={columnConfig}
         data={rows}
         isPending={loading && !rows}
         isStale={loading && !!rows}
-        pagination={{ type: 'none' }}
-        emptyState={<Text>No issues match the current filter.</Text>}
+        sort={{ descriptor: sortDescriptor, onSortChange }}
+        pagination={{
+          type: 'page',
+          pageSize,
+          offset: startAt,
+          totalCount: total,
+          hasPreviousPage: startAt > 0,
+          hasNextPage: startAt + pageSize < total,
+          onNextPage,
+          onPreviousPage,
+          showPageSizeOptions: false,
+        }}
+        emptyState={
+          <Text>
+            {query.search
+              ? 'No issues match the current filter and search.'
+              : 'No issues match the current filter.'}
+          </Text>
+        }
       />
     </Flex>
   );

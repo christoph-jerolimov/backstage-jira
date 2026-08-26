@@ -2,7 +2,7 @@
 
 ### Requirement: Issues are shown as a table
 
-The Jira tab SHALL render the entity's Jira issues as a table using Backstage UI components. Each row SHALL show at least the issue key, summary, type, status, priority, assignee, and last-updated time. The issue key SHALL link to the issue in Jira, opening in a new tab. Columns for key, summary, status, priority, created, and updated SHALL be sortable; activating a column sort re-fetches from the backend with the corresponding sort parameters, defaulting to updated descending.
+The Jira tab SHALL render the entity's Jira issues as a table using Backstage UI components. Each row SHALL show at least the issue key, summary, type, status, priority, assignee, and last-updated time. The issue key SHALL link to the issue in Jira, opening in a new tab. Columns for key, summary, status, priority, and updated SHALL be sortable; activating a column sort re-fetches from the backend with the corresponding sort parameters, defaulting to updated descending.
 
 #### Scenario: Issues render in the table
 

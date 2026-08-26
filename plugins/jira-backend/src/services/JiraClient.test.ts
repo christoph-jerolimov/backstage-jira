@@ -40,15 +40,21 @@ describe('toJqlString', () => {
 
 describe('buildJql', () => {
   it('builds project-only JQL', () => {
-    expect(buildJql({ projectKey: 'PROJ' })).toBe(
+    expect(buildJql({ projectKeys: ['PROJ'] })).toBe(
       'project = "PROJ" ORDER BY updated DESC',
+    );
+  });
+
+  it('uses project IN for multiple projects with per-key escaping', () => {
+    expect(buildJql({ projectKeys: ['PROJ1', 'PR"J2'] })).toBe(
+      'project IN ("PROJ1", "PR\\"J2") ORDER BY updated DESC',
     );
   });
 
   it('adds component and filter constraints', () => {
     expect(
       buildJql({
-        projectKey: 'PROJ',
+        projectKeys: ['PROJ'],
         component: 'backend',
         filterJql: 'resolution = Unresolved',
       }),
@@ -59,8 +65,51 @@ describe('buildJql', () => {
 
   it('escapes hostile annotation values instead of letting them extend the query', () => {
     expect(
-      buildJql({ projectKey: 'X" OR project != "' }),
+      buildJql({ projectKeys: ['X" OR project != "'] }),
     ).toBe('project = "X\\" OR project != \\"" ORDER BY updated DESC');
+  });
+
+  it.each([
+    ['updated', 'desc', 'ORDER BY updated DESC'],
+    ['created', 'asc', 'ORDER BY created ASC'],
+    ['key', 'asc', 'ORDER BY key ASC'],
+    ['priority', 'desc', 'ORDER BY priority DESC'],
+    ['status', 'asc', 'ORDER BY status ASC'],
+    ['summary', 'desc', 'ORDER BY summary DESC'],
+  ] as const)('sorts by %s %s', (sortBy, order, suffix) => {
+    expect(buildJql({ projectKeys: ['PROJ'], sortBy, order })).toBe(
+      `project = "PROJ" ${suffix}`,
+    );
+  });
+
+  it('adds a summary search clause with escaping', () => {
+    expect(
+      buildJql({ projectKeys: ['PROJ'], search: 'flux "capacitor" \\ x' }),
+    ).toBe(
+      'project = "PROJ" AND summary ~ "flux \\"capacitor\\" \\\\ x" ORDER BY updated DESC',
+    );
+  });
+
+  it('search metacharacters cannot extend the query', () => {
+    expect(
+      buildJql({ projectKeys: ['PROJ'], search: '" OR project != "' }),
+    ).toBe(
+      'project = "PROJ" AND summary ~ "\\" OR project != \\"" ORDER BY updated DESC',
+    );
+  });
+
+  it('combines search, filter, sort, and multiple projects', () => {
+    expect(
+      buildJql({
+        projectKeys: ['A', 'B'],
+        filterJql: 'resolution = Unresolved',
+        search: 'x',
+        sortBy: 'priority',
+        order: 'asc',
+      }),
+    ).toBe(
+      'project IN ("A", "B") AND (resolution = Unresolved) AND summary ~ "x" ORDER BY priority ASC',
+    );
   });
 });
 
@@ -84,7 +133,25 @@ describe('JiraClient', () => {
       `Basic ${Buffer.from('bot@example.com:s3cret').toString('base64')}`,
     );
     expect(JSON.parse(init.body)).toEqual(
-      expect.objectContaining({ jql: 'project = "PROJ"', maxResults: 50 }),
+      expect.objectContaining({ jql: 'project = "PROJ"', startAt: 0, maxResults: 50 }),
+    );
+  });
+
+  it('passes paging options through and reports them back, capping the page size', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      jsonResponse({ total: 120, issues: [] }),
+    );
+    const result = await clientWith(fetchMock).searchIssues({
+      connection: basicConnection,
+      jql: 'project = "PROJ"',
+      startAt: 100,
+      maxResults: 200,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.startAt).toBe(100);
+    expect(body.maxResults).toBe(50);
+    expect(result).toEqual(
+      expect.objectContaining({ total: 120, startAt: 100, pageSize: 50 }),
     );
   });
 

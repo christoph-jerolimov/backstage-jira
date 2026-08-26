@@ -1,7 +1,7 @@
 import { LoggerService } from '@backstage/backend-plugin-api';
 import { z } from 'zod/v3';
 import { JiraConnection } from './JiraConnectionsReader';
-import { JiraIssue } from '../types';
+import { JiraIssue, MAX_PAGE_SIZE, SortField, SortOrder } from '../types';
 
 /** Escapes a value for interpolation into JQL as a quoted string. */
 export function toJqlString(value: string): string {
@@ -9,18 +9,31 @@ export function toJqlString(value: string): string {
 }
 
 export function buildJql(options: {
-  projectKey: string;
+  projectKeys: string[];
   component?: string;
   filterJql?: string;
+  search?: string;
+  sortBy?: SortField;
+  order?: SortOrder;
 }): string {
-  const clauses = [`project = ${toJqlString(options.projectKey)}`];
+  const keys = options.projectKeys;
+  const clauses = [
+    keys.length === 1
+      ? `project = ${toJqlString(keys[0])}`
+      : `project IN (${keys.map(toJqlString).join(', ')})`,
+  ];
   if (options.component) {
     clauses.push(`component = ${toJqlString(options.component)}`);
   }
   if (options.filterJql) {
     clauses.push(`(${options.filterJql})`);
   }
-  return `${clauses.join(' AND ')} ORDER BY updated DESC`;
+  if (options.search) {
+    clauses.push(`summary ~ ${toJqlString(options.search)}`);
+  }
+  const sortBy = options.sortBy ?? 'updated';
+  const order = options.order ?? (options.sortBy ? 'asc' : 'desc');
+  return `${clauses.join(' AND ')} ORDER BY ${sortBy} ${order.toUpperCase()}`;
 }
 
 export class JiraApiError extends Error {
@@ -64,7 +77,6 @@ const REQUESTED_FIELDS = [
   'updated',
 ];
 
-const PAGE_SIZE = 50;
 
 /**
  * Minimal Jira REST client for issue search, working against both Jira
@@ -92,8 +104,17 @@ export class JiraClient {
   async searchIssues(options: {
     connection: JiraConnection;
     jql: string;
-  }): Promise<{ issues: JiraIssue[]; total: number }> {
+    startAt?: number;
+    maxResults?: number;
+  }): Promise<{
+    issues: JiraIssue[];
+    total: number;
+    startAt: number;
+    pageSize: number;
+  }> {
     const { connection, jql } = options;
+    const startAt = options.startAt ?? 0;
+    const maxResults = Math.min(options.maxResults ?? MAX_PAGE_SIZE, MAX_PAGE_SIZE);
     const fetchImpl = this.options.fetchImpl ?? fetch;
     const url = `${connection.apiBaseUrl}/rest/api/2/search`;
     this.options.logger.debug(`Searching Jira at ${url}`, { jql });
@@ -109,7 +130,8 @@ export class JiraClient {
         },
         body: JSON.stringify({
           jql,
-          maxResults: PAGE_SIZE,
+          startAt,
+          maxResults,
           fields: REQUESTED_FIELDS,
         }),
       });
@@ -135,6 +157,8 @@ export class JiraClient {
 
     return {
       total: parsed.data.total,
+      startAt,
+      pageSize: maxResults,
       issues: parsed.data.issues.map(issue => ({
         key: issue.key,
         url: `${connection.baseUrl}/browse/${encodeURIComponent(issue.key)}`,

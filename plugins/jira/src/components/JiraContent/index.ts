@@ -1,0 +1,1 @@
+export { JiraContent } from './JiraContent';

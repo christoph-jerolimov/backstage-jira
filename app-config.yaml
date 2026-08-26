@@ -216,6 +216,35 @@ catalog:
     #   rules:
     #     - allow: [User, Group]
 
+# Connections to external systems (BEP-0014 shape). The jira backend plugin
+# reads entries with `type: jira`; see plugins/jira-backend/README.md.
+# Uncomment and set JIRA_EMAIL / JIRA_API_TOKEN to enable the Jira tab:
+# connections:
+#   - type: jira
+#     title: My Jira
+#     host: example.atlassian.net
+#     auth:
+#       - method: basic # Jira Cloud: account email + API token
+#         email: ${JIRA_EMAIL}
+#         apiToken: ${JIRA_API_TOKEN}
+#       # - method: token # Jira Data Center / Server: personal access token
+#       #   token: ${JIRA_PAT}
+
+jira:
+  # Filters offered in the Jira entity tab; `defaultFilter` selects the
+  # pre-selected one. Omit this whole section to get the built-in
+  # "Unresolved" (default) and "All issues" filters.
+  defaultFilter: unresolved
+  filters:
+    - id: unresolved
+      name: Unresolved
+      jql: resolution = Unresolved
+    - id: recent
+      name: Updated last 7 days
+      jql: updated >= -7d
+    - id: all
+      name: All issues
+
 kubernetes:
   # see https://backstage.io/docs/features/kubernetes/configuration for kubernetes configuration options
 

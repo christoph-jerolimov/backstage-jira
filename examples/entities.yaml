@@ -12,6 +12,11 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: example-website
+  annotations:
+    # Shows the Jira tab on this entity; see plugins/jira/README.md
+    jira/project-key: PROJ
+    # jira/component: backend
+    # jira/instance: example.atlassian.net
 spec:
   type: website
   lifecycle: experimental

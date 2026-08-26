@@ -6,7 +6,7 @@ Lets operators define the set of Jira issue filters offered in the entity tab �
 
 ### Requirement: Named filters configurable in app-config
 
-The app-config SHALL accept a `jira.filters` section defining an ordered list of named filters, each with a unique `id`, a display `name`, and a `jql` fragment that is combined with the entity's project (and optional component) constraint. A `jira.defaultFilter` value SHALL select the default filter by id. Filter JQL SHALL be defined only in backend-read configuration — the frontend selects filters by id and never submits raw JQL.
+The app-config SHALL accept a `jira.filters` section defining an ordered list of named filters, each with a unique `id`, a display `name`, and an optional `jql` fragment that is combined with the entity's project (and optional component) constraint; omitting `jql` declares an unconstrained ("all issues") filter. (Backstage config rejects empty-string values at the config layer, so an accidentally empty `jql` fails at startup with a config type error.) A `jira.defaultFilter` value SHALL select the default filter by id. Filter JQL SHALL be defined only in backend-read configuration — the frontend selects filters by id and never submits raw JQL.
 
 #### Scenario: Configured filters are offered
 
@@ -39,7 +39,12 @@ When no `jira.filters` are configured the system SHALL behave as if two filters 
 
 ### Requirement: Invalid filter configuration fails fast
 
-A `jira.filters` list containing duplicate ids, an empty `jql` for a filter other than an explicit "all"-style filter, or a `jira.defaultFilter` that names a non-existent id SHALL be rejected when the backend starts, with an error naming the offending entry.
+A `jira.filters` list containing duplicate ids, or a `jira.defaultFilter` that names a non-existent id, SHALL be rejected when the backend starts, with an error naming the offending entry.
+
+#### Scenario: Omitted jql is an unconstrained filter
+
+- **WHEN** a configured filter has no `jql` value
+- **THEN** the filter matches all issues of the entity's project (and component, when annotated)
 
 #### Scenario: Default references unknown id
 

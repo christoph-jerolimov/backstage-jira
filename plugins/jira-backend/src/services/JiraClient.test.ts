@@ -82,6 +82,14 @@ describe('buildJql', () => {
     );
   });
 
+  it('adds a status category clause', () => {
+    expect(
+      buildJql({ projectKeys: ['PROJ'], statusCategory: 'In Progress' }),
+    ).toBe(
+      'project = "PROJ" AND statusCategory = "In Progress" ORDER BY updated DESC',
+    );
+  });
+
   it('adds a summary search clause with escaping', () => {
     expect(
       buildJql({ projectKeys: ['PROJ'], search: 'flux "capacitor" \\ x' }),
@@ -135,6 +143,20 @@ describe('JiraClient', () => {
     expect(JSON.parse(init.body)).toEqual(
       expect.objectContaining({ jql: 'project = "PROJ"', startAt: 0, maxResults: 50 }),
     );
+  });
+
+  it('counts issues with maxResults 0 without fetching any', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      jsonResponse({ total: 137, issues: [] }),
+    );
+    const count = await clientWith(fetchMock).countIssues({
+      connection: basicConnection,
+      jql: 'project = "PROJ" AND statusCategory = "Done"',
+    });
+    expect(count).toBe(137);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.maxResults).toBe(0);
+    expect(body.jql).toBe('project = "PROJ" AND statusCategory = "Done"');
   });
 
   it('passes paging options through and reports them back, capping the page size', async () => {

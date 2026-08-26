@@ -31,6 +31,15 @@ credentials required)
   missing/invalid Jira connection config, `502` Jira unreachable or
   rejecting the query.
 
+`GET /api/jira/v1/status-counts?entityRef=<ref>` (same auth)
+
+- Returns exact issue counts per Jira status category for the entity's
+  annotated projects (and component), computed with Jira count queries —
+  independent of the issues endpoint's filters and pagination:
+  `{ categories: [{ id: todo|inprogress|done, name, count }], total }`.
+- Same annotation handling and error mapping as the issues endpoint
+  (`400`/`401`/`404`/`500`/`502`).
+
 ## Entity annotations
 
 | Annotation         | Meaning                                                        |

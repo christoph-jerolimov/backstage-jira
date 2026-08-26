@@ -50,7 +50,7 @@ function respondWith(overrides: Partial<JiraIssuesResponse>): JiraIssuesResponse
   };
 }
 
-async function renderContent(jiraApi: JiraApi) {
+async function renderContent(jiraApi: Partial<JiraApi>) {
   return renderInTestApp(
     <TestApiProvider apis={[[jiraApiRef, jiraApi]]}>
       <EntityProvider entity={entity}>

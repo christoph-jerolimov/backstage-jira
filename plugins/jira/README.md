@@ -15,6 +15,13 @@ metadata:
     # jira/instance: example.atlassian.net # optional: pick a Jira host
 ```
 
+A compact **Jira summary card** on the entity Overview page shows issue
+counts by status category (To Do / In Progress / Done) with a link into
+the Jira tab. The card registers itself for annotated entities in the
+default overview layout; apps using a custom entity content layout place
+it like any other entity card. Counts come from the backend's
+`status-counts` endpoint and are exact regardless of project size.
+
 The key, summary, status, priority, and updated columns sort server-side
 (Jira orders priority/status by rank, as in Jira's own UI), the search box
 matches issue summaries with Jira's `~` word matching, and the pagination

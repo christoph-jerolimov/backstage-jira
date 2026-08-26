@@ -17,11 +17,14 @@ import { JiraConnectionsReader } from './services/JiraConnectionsReader';
 import { JiraFilterConfig } from './services/filterConfig';
 import {
   JiraIssuesResponse,
+  JiraStatusCountsResponse,
   MAX_PAGE_SIZE,
   SORT_FIELDS,
+  STATUS_CATEGORIES,
   SortField,
   SortOrder,
 } from './types';
+import { JiraConnection } from './services/JiraConnectionsReader';
 
 function singleParam(value: unknown, name: string): string | undefined {
   if (value === undefined) {
@@ -45,6 +48,13 @@ function numberParam(value: unknown, name: string): number | undefined {
     );
   }
   return parsed;
+}
+
+/** The Jira query target an entity's annotations resolve to. */
+interface JiraTarget {
+  projectKeys: string[];
+  component?: string;
+  connection: JiraConnection;
 }
 
 export async function createRouter({
@@ -71,7 +81,9 @@ export async function createRouter({
     default: f.id === filterConfig.defaultFilterId,
   }));
 
-  router.get('/v1/issues', async (req, res) => {
+  // Authenticates the caller and resolves an entityRef query parameter to the
+  // Jira projects, component, and connection its annotations select.
+  async function resolveTarget(req: express.Request): Promise<JiraTarget> {
     const credentials = await httpAuth.credentials(req, {
       allow: ['user', 'service'],
     });
@@ -86,6 +98,61 @@ export async function createRouter({
     } catch {
       throw new InputError(`Invalid entity ref "${entityRef}"`);
     }
+
+    const entity = await catalog.getEntityByRef(parsedRef, { credentials });
+    if (!entity) {
+      throw new NotFoundError(`Entity "${entityRef}" not found`);
+    }
+    const annotations = entity.metadata.annotations ?? {};
+    const projectKeys = (annotations[JIRA_PROJECT_KEY_ANNOTATION] ?? '')
+      .split(',')
+      .map(key => key.trim())
+      .filter(Boolean);
+    if (projectKeys.length === 0) {
+      throw new NotFoundError(
+        `Entity "${entityRef}" has no "${JIRA_PROJECT_KEY_ANNOTATION}" annotation`,
+      );
+    }
+    const component = annotations[JIRA_COMPONENT_ANNOTATION];
+    const instanceHost = annotations[JIRA_INSTANCE_ANNOTATION];
+
+    // Connection problems are configuration errors (500), not client errors:
+    // rethrow them without the InputError/NotFoundError marker types that the
+    // error middleware maps to 4xx.
+    let connection;
+    try {
+      connection = connections.find(instanceHost ? { host: instanceHost } : {});
+    } catch (e) {
+      throw new Error(
+        `Jira connection configuration error: ${(e as Error).message}`,
+      );
+    }
+
+    return { projectKeys, component, connection };
+  }
+
+  // Runs a Jira call, mapping Jira-side failures to a 502 response. Returns
+  // undefined when the response has already been sent.
+  async function callJira<T>(
+    res: express.Response,
+    fn: () => Promise<T>,
+  ): Promise<T | undefined> {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof JiraApiError) {
+        logger.warn(`Jira request failed: ${e.message}`);
+        res.status(502).json({
+          error: { name: 'JiraApiError', message: e.message },
+        });
+        return undefined;
+      }
+      throw e;
+    }
+  }
+
+  router.get('/v1/issues', async (req, res) => {
+    const { projectKeys, component, connection } = await resolveTarget(req);
 
     const filterParam = singleParam(req.query.filter, 'filter');
     const filterId = filterParam ?? filterConfig.defaultFilterId;
@@ -123,35 +190,6 @@ export async function createRouter({
       orderParam ?? (sortByParam === undefined ? 'desc' : 'asc');
     const search = singleParam(req.query.search, 'search')?.trim() || undefined;
 
-    const entity = await catalog.getEntityByRef(parsedRef, { credentials });
-    if (!entity) {
-      throw new NotFoundError(`Entity "${entityRef}" not found`);
-    }
-    const annotations = entity.metadata.annotations ?? {};
-    const projectKeys = (annotations[JIRA_PROJECT_KEY_ANNOTATION] ?? '')
-      .split(',')
-      .map(key => key.trim())
-      .filter(Boolean);
-    if (projectKeys.length === 0) {
-      throw new NotFoundError(
-        `Entity "${entityRef}" has no "${JIRA_PROJECT_KEY_ANNOTATION}" annotation`,
-      );
-    }
-    const component = annotations[JIRA_COMPONENT_ANNOTATION];
-    const instanceHost = annotations[JIRA_INSTANCE_ANNOTATION];
-
-    // Connection problems are configuration errors (500), not client errors:
-    // rethrow them without the InputError/NotFoundError marker types that the
-    // error middleware maps to 4xx.
-    let connection;
-    try {
-      connection = connections.find(
-        instanceHost ? { host: instanceHost } : {},
-      );
-    } catch (e) {
-      throw new Error(`Jira connection configuration error: ${(e as Error).message}`);
-    }
-
     const jql = buildJql({
       projectKeys,
       component,
@@ -161,23 +199,11 @@ export async function createRouter({
       order,
     });
 
-    let searchResult;
-    try {
-      searchResult = await jiraClient.searchIssues({
-        connection,
-        jql,
-        startAt,
-        maxResults: limit,
-      });
-    } catch (e) {
-      if (e instanceof JiraApiError) {
-        logger.warn(`Jira request failed: ${e.message}`);
-        res.status(502).json({
-          error: { name: 'JiraApiError', message: e.message },
-        });
-        return;
-      }
-      throw e;
+    const searchResult = await callJira(res, () =>
+      jiraClient.searchIssues({ connection, jql, startAt, maxResults: limit }),
+    );
+    if (!searchResult) {
+      return;
     }
 
     const projects = projectKeys.map(key => ({
@@ -193,6 +219,38 @@ export async function createRouter({
       appliedFilter: filter.id,
       project: projects[0],
       projects,
+    };
+    res.json(response);
+  });
+
+  router.get('/v1/status-counts', async (req, res) => {
+    const { projectKeys, component, connection } = await resolveTarget(req);
+
+    const counts = await callJira(res, () =>
+      Promise.all(
+        STATUS_CATEGORIES.map(category =>
+          jiraClient.countIssues({
+            connection,
+            jql: buildJql({
+              projectKeys,
+              component,
+              statusCategory: category.name,
+            }),
+          }),
+        ),
+      ),
+    );
+    if (!counts) {
+      return;
+    }
+
+    const response: JiraStatusCountsResponse = {
+      categories: STATUS_CATEGORIES.map((category, index) => ({
+        id: category.id,
+        name: category.name,
+        count: counts[index],
+      })),
+      total: counts.reduce((sum, count) => sum + count, 0),
     };
     res.json(response);
   });

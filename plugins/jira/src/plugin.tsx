@@ -4,7 +4,10 @@ import {
   discoveryApiRef,
   fetchApiRef,
 } from '@backstage/frontend-plugin-api';
-import { EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
+import {
+  EntityCardBlueprint,
+  EntityContentBlueprint,
+} from '@backstage/plugin-catalog-react/alpha';
 import { JiraClient, jiraApiRef } from './api';
 import { isJiraAvailable } from './annotations';
 
@@ -29,7 +32,17 @@ export const entityJiraContent = EntityContentBlueprint.make({
   },
 });
 
+export const entityJiraOverviewCard = EntityCardBlueprint.make({
+  name: 'overview-card',
+  params: {
+    filter: isJiraAvailable,
+    type: 'info',
+    loader: () =>
+      import('./components/JiraOverviewCard').then(m => <m.JiraOverviewCard />),
+  },
+});
+
 export const jiraPlugin = createFrontendPlugin({
   pluginId: 'jira',
-  extensions: [jiraApi, entityJiraContent],
+  extensions: [jiraApi, entityJiraContent, entityJiraOverviewCard],
 });

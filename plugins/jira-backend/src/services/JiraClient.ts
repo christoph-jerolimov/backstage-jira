@@ -14,6 +14,8 @@ export function buildJql(options: {
   filterJql?: string;
   search?: string;
   statusCategory?: string;
+  /** Jira account identifier to constrain the assignee to, as a literal. */
+  assignee?: string;
   sortBy?: SortField;
   order?: SortOrder;
 }): string {
@@ -31,6 +33,9 @@ export function buildJql(options: {
   }
   if (options.statusCategory) {
     clauses.push(`statusCategory = ${toJqlString(options.statusCategory)}`);
+  }
+  if (options.assignee) {
+    clauses.push(`assignee = ${toJqlString(options.assignee)}`);
   }
   if (options.search) {
     clauses.push(`summary ~ ${toJqlString(options.search)}`);
@@ -71,6 +76,13 @@ const searchResponseSchema = z.object({
   ),
 });
 
+const userSearchResponseSchema = z.array(
+  z.object({
+    accountId: z.string().nullish(),
+    name: z.string().nullish(),
+  }),
+);
+
 const REQUESTED_FIELDS = [
   'summary',
   'issuetype',
@@ -103,6 +115,73 @@ export class JiraClient {
       return `Basic ${encoded}`;
     }
     return `Bearer ${auth.token}`;
+  }
+
+  /**
+   * Resolves an email address to a Jira account identifier via Jira's user
+   * search API, or undefined when no account matches. Tries the Jira Cloud
+   * `query` parameter first and falls back to the Data Center `username`
+   * parameter.
+   */
+  async findUser(options: {
+    connection: JiraConnection;
+    email: string;
+  }): Promise<string | undefined> {
+    const { connection, email } = options;
+    for (const param of ['query', 'username'] as const) {
+      const users = await this.#searchUsers(connection, param, email);
+      if (users === undefined) {
+        continue;
+      }
+      const account = users.find(
+        user => user.accountId ?? user.name,
+      );
+      if (account) {
+        return account.accountId ?? account.name ?? undefined;
+      }
+      // An empty result on the Cloud parameter may still match on the Data
+      // Center parameter; an empty result on the last parameter is a miss.
+    }
+    return undefined;
+  }
+
+  async #searchUsers(
+    connection: JiraConnection,
+    param: 'query' | 'username',
+    email: string,
+  ): Promise<Array<{ accountId?: string | null; name?: string | null }> | undefined> {
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const url = `${connection.apiBaseUrl}/rest/api/2/user/search?${param}=${encodeURIComponent(email)}`;
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: this.authHeader(connection),
+        },
+      });
+    } catch (e) {
+      throw new JiraApiError(
+        `Failed to reach Jira at ${connection.host}: ${(e as Error).message}`,
+      );
+    }
+    // Cloud rejects `username`, Data Center rejects `query` — treat a 400/404
+    // as "this parameter flavor is unsupported" and let the caller fall back.
+    if (response.status === 400 || response.status === 404) {
+      return undefined;
+    }
+    if (!response.ok) {
+      throw new JiraApiError(
+        `Jira at ${connection.host} responded with ${response.status} ${response.statusText}`,
+      );
+    }
+    const parsed = userSearchResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new JiraApiError(
+        `Unexpected user search response shape from Jira at ${connection.host}`,
+      );
+    }
+    return parsed.data;
   }
 
   /** Counts the issues matching a JQL query without fetching any of them. */

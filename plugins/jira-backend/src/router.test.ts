@@ -5,6 +5,7 @@ import request from 'supertest';
 import { createRouter } from './router';
 import { JiraClient } from './services/JiraClient';
 import { JiraConnectionsReader } from './services/JiraConnectionsReader';
+import { JiraUserResolver } from './services/JiraUserResolver';
 import { readFilterConfig } from './services/filterConfig';
 
 const SECRET = 'super-secret-token';
@@ -74,18 +75,38 @@ const searchResponse = {
   ],
 };
 
+const mockUserEntity = (options?: {
+  email?: string;
+  annotations?: Record<string, string>;
+}) => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'User',
+  metadata: {
+    name: 'mock',
+    namespace: 'default',
+    annotations: options?.annotations,
+  },
+  spec:
+    options?.email === undefined ? {} : { profile: { email: options.email } },
+});
+
 async function setupApp(options?: {
   connections?: unknown;
   jira?: unknown;
   fetchImpl?: jest.Mock;
+  jiraUsers?: unknown[];
+  userEntity?: object | null;
 }) {
+  const jiraUsers = options?.jiraUsers ?? [{ accountId: 'abc-123' }];
   const fetchMock =
     options?.fetchImpl ??
-    jest.fn().mockResolvedValue(
-      new Response(JSON.stringify(searchResponse), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    jest.fn().mockImplementation(async (url: string) =>
+      new Response(
+        JSON.stringify(
+          url.includes('/rest/api/2/user/search') ? jiraUsers : searchResponse,
+        ),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
     );
   const config = mockServices.rootConfig({
     data: {
@@ -100,11 +121,30 @@ async function setupApp(options?: {
     },
   });
   const logger = mockServices.logger.mock();
+  const userEntity =
+    options?.userEntity === undefined
+      ? mockUserEntity({ email: 'dana@example.com' })
+      : options.userEntity;
+  const catalog = catalogServiceMock({
+    entities: [
+      annotatedEntity,
+      componentEntity,
+      multiProjectEntity,
+      bareEntity,
+      ...(userEntity ? [userEntity] : []),
+    ] as any,
+  });
+  const jiraClientForResolver = new JiraClient({
+    logger,
+    fetchImpl: fetchMock as unknown as typeof fetch,
+  });
   const router = await createRouter({
     logger,
     httpAuth: mockServices.httpAuth(),
-    catalog: catalogServiceMock({
-      entities: [annotatedEntity, componentEntity, multiProjectEntity, bareEntity],
+    catalog,
+    userResolver: new JiraUserResolver({
+      catalog,
+      jiraClient: jiraClientForResolver,
     }),
     connections: JiraConnectionsReader.fromConfig(config),
     filterConfig: readFilterConfig(config),
@@ -139,6 +179,7 @@ describe('createRouter', () => {
       filters: [
         { id: 'unresolved', name: 'Unresolved', default: true },
         { id: 'all', name: 'All issues', default: false },
+        { id: 'assigned-to-me', name: 'Assigned to me', default: false },
       ],
       appliedFilter: 'unresolved',
       startAt: 0,
@@ -453,6 +494,100 @@ describe('createRouter', () => {
     });
   });
 
+  describe('assigned-to-me filter', () => {
+    it('constrains assignee to the resolved Jira account', async () => {
+      const { app, fetchMock } = await setupApp();
+      const response = await request(app).get(
+        '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body.appliedFilter).toBe('assigned-to-me');
+      const searchCall = fetchMock.mock.calls.find(([url]: [string]) =>
+        url.includes('/rest/api/2/search'),
+      );
+      expect(JSON.parse(searchCall[1].body).jql).toBe(
+        'project = "PROJ" AND assignee = "abc-123" ORDER BY updated DESC',
+      );
+      const userSearchCall = fetchMock.mock.calls.find(([url]: [string]) =>
+        url.includes('/rest/api/2/user/search'),
+      );
+      expect(userSearchCall[0]).toContain('query=dana%40example.com');
+    });
+
+    it('uses the jira/user-email annotation over the profile email', async () => {
+      const { app, fetchMock } = await setupApp({
+        userEntity: mockUserEntity({
+          email: 'dana@example.com',
+          annotations: { 'jira/user-email': 'dana.b@corp.example.com' },
+        }),
+      });
+      const response = await request(app).get(
+        '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me',
+      );
+      expect(response.status).toBe(200);
+      const userSearchCall = fetchMock.mock.calls.find(([url]: [string]) =>
+        url.includes('/rest/api/2/user/search'),
+      );
+      expect(userSearchCall[0]).toContain('query=dana.b%40corp.example.com');
+    });
+
+    it('composes with search, sort, and paging', async () => {
+      const { app, fetchMock } = await setupApp();
+      await request(app).get(
+        '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me&search=flux&sortBy=priority&order=asc',
+      );
+      const searchCall = fetchMock.mock.calls.find(([url]: [string]) =>
+        url.includes('/rest/api/2/search'),
+      );
+      expect(JSON.parse(searchCall[1].body).jql).toBe(
+        'project = "PROJ" AND assignee = "abc-123" AND summary ~ "flux" ORDER BY priority ASC',
+      );
+    });
+
+    it('returns 400 for service callers', async () => {
+      const { app, fetchMock } = await setupApp();
+      const response = await request(app)
+        .get(
+          '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me',
+        )
+        .set('Authorization', 'Bearer mock-service-token');
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toMatch(/signed-in user/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the User entity has no email', async () => {
+      const { app } = await setupApp({ userEntity: mockUserEntity() });
+      const response = await request(app).get(
+        '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/no profile email/);
+    });
+
+    it('returns 404 when the User entity is missing', async () => {
+      const { app } = await setupApp({ userEntity: null });
+      const response = await request(app).get(
+        '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/No catalog User entity/);
+    });
+
+    it('returns 404 when Jira has no matching account', async () => {
+      const { app, fetchMock } = await setupApp({ jiraUsers: [] });
+      const response = await request(app).get(
+        '/v1/issues?entityRef=component:default/annotated&filter=assigned-to-me',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/no account matching/);
+      const issueSearchCalls = fetchMock.mock.calls.filter(([url]: [string]) =>
+        url.includes('/rest/api/2/search'),
+      );
+      expect(issueSearchCalls).toHaveLength(0);
+    });
+  });
+
   it('honors a configured default filter in requests without a filter', async () => {
     const { app, fetchMock } = await setupApp({
       jira: {
@@ -471,6 +606,7 @@ describe('createRouter', () => {
     expect(response.body.filters).toEqual([
       { id: 'unresolved', name: 'Unresolved', default: false },
       { id: 'recent', name: 'Recent', default: true },
+      { id: 'assigned-to-me', name: 'Assigned to me', default: false },
     ]);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.jql).toContain('(updated >= -7d)');

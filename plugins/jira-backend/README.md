@@ -13,8 +13,8 @@ credentials required)
   catalog permissions apply), reads its Jira annotations, and queries Jira
   with JQL assembled server-side.
 - Optional query parameters:
-  - `filter`: one of the configured filter ids; the default filter applies
-    when omitted.
+  - `filter`: one of the configured filter ids, or the built-in
+    `assigned-to-me` (see below); the default filter applies when omitted.
   - `startAt`, `limit`: offset pagination; `limit` is capped at 50.
   - `sortBy` (`updated`, `created`, `key`, `priority`, `status`, `summary`)
     and `order` (`asc`/`desc`): JQL `ORDER BY` sorting. Default is `updated`
@@ -47,6 +47,7 @@ credentials required)
 | `jira/project-key` | Jira project key, or a comma-separated list (`PROJ1,PROJ2`) queried together; required for the Jira tab to appear. |
 | `jira/component`   | Optional Jira component to narrow issues.                      |
 | `jira/instance`    | Optional connection host when several Jira hosts are configured. |
+| `jira/user-email`  | On **User** entities: overrides the email used to find the user's Jira account for the "Assigned to me" filter. |
 
 ## Configuration
 
@@ -102,6 +103,30 @@ jira:
 Without a `jira.filters` section, built-in `unresolved` (default) and `all`
 filters apply. Filter JQL is trusted operator config; API callers can only
 select filters by id and can never submit JQL.
+
+### "Assigned to me" filter
+
+A built-in `assigned-to-me` ("Assigned to me") filter is always offered
+after the configured filters. When selected, the backend maps the signed-in
+Backstage user to a Jira account and constrains the query to
+`assignee = <account>`:
+
+1. The caller's User entity is looked up in the catalog (with the caller's
+   credentials). The email comes from a `jira/user-email` annotation on the
+   User entity when present, otherwise from `spec.profile.email`.
+2. The email is resolved to a Jira account via Jira's user search API
+   (Cloud `?query=` with a Data Center `?username=` fallback); successful
+   resolutions are cached in-memory for ten minutes.
+
+Notes:
+
+- The filter id `assigned-to-me` is reserved — configuring a filter with
+  that id fails startup. `jira.defaultFilter: assigned-to-me` is allowed.
+- The Jira service account needs the **Browse users** permission for the
+  user search; without it, the filter fails with a 502.
+- Callers without a user identity (service tokens, guest sign-in without a
+  User entity) get a clear 400/404 explaining what is missing; other
+  filters keep working.
 
 ## Development
 

@@ -4,7 +4,14 @@ apiVersion: backstage.io/v1alpha1
 kind: User
 metadata:
   name: guest
+  # Optional: overrides the email used to find this user's Jira account for
+  # the "Assigned to me" filter; see plugins/jira-backend/README.md
+  # annotations:
+  #   jira/user-email: guest@jira.example.com
 spec:
+  profile:
+    # Used by the Jira plugin's "Assigned to me" filter
+    email: guest@example.com
   memberOf: [guests]
 ---
 # https://backstage.io/docs/features/software-catalog/descriptor-format#kind-group

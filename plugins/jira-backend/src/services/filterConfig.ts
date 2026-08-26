@@ -20,6 +20,16 @@ const BUILT_IN_FILTERS: JiraFilter[] = [
 ];
 
 /**
+ * Id of the dynamic built-in filter scoping issues to the caller's Jira
+ * account. Always offered in addition to the configured filters; its JQL is
+ * built per request rather than from configuration.
+ */
+export const ASSIGNED_TO_ME_FILTER_ID = 'assigned-to-me';
+
+/** Display name of the assigned-to-me filter. */
+export const ASSIGNED_TO_ME_FILTER_NAME = 'Assigned to me';
+
+/**
  * Reads `jira.filters` and `jira.defaultFilter` from configuration, falling
  * back to the built-in unresolved/all filters when none are configured.
  */
@@ -28,10 +38,17 @@ export function readFilterConfig(config: RootConfigService): JiraFilterConfig {
   const defaultFilterId = config.getOptionalString('jira.defaultFilter');
 
   if (!filterConfigs || filterConfigs.length === 0) {
-    if (defaultFilterId && !BUILT_IN_FILTERS.some(f => f.id === defaultFilterId)) {
+    if (
+      defaultFilterId &&
+      defaultFilterId !== ASSIGNED_TO_ME_FILTER_ID &&
+      !BUILT_IN_FILTERS.some(f => f.id === defaultFilterId)
+    ) {
       throw new InputError(
         `jira.defaultFilter is "${defaultFilterId}" but no jira.filters are ` +
-          `configured; known built-in filter ids: ${BUILT_IN_FILTERS.map(f => f.id).join(', ')}`,
+          `configured; known built-in filter ids: ${[
+            ...BUILT_IN_FILTERS.map(f => f.id),
+            ASSIGNED_TO_ME_FILTER_ID,
+          ].join(', ')}`,
       );
     }
     return {
@@ -48,6 +65,12 @@ export function readFilterConfig(config: RootConfigService): JiraFilterConfig {
     // Omitting jql declares an unconstrained "all issues" filter; an empty
     // string is rejected by the config layer itself.
     const jql = filterConfig.getOptionalString('jql') ?? '';
+    if (id === ASSIGNED_TO_ME_FILTER_ID) {
+      throw new InputError(
+        `Filter id "${ASSIGNED_TO_ME_FILTER_ID}" in jira.filters is reserved ` +
+          'for the built-in user-scoped filter',
+      );
+    }
     if (seen.has(id)) {
       throw new InputError(`Duplicate filter id "${id}" in jira.filters`);
     }
@@ -56,7 +79,7 @@ export function readFilterConfig(config: RootConfigService): JiraFilterConfig {
   }
 
   const resolvedDefault = defaultFilterId ?? filters[0].id;
-  if (!seen.has(resolvedDefault)) {
+  if (resolvedDefault !== ASSIGNED_TO_ME_FILTER_ID && !seen.has(resolvedDefault)) {
     throw new InputError(
       `jira.defaultFilter is "${resolvedDefault}" but no filter with that id ` +
         `exists; known filter ids: ${[...seen].join(', ')}`,

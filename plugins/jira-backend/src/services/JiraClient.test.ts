@@ -145,6 +145,82 @@ describe('JiraClient', () => {
     );
   });
 
+  describe('findUser', () => {
+    it('resolves a Cloud account via the query parameter', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse([{ accountId: 'abc-123', displayName: 'Dana' }]),
+      );
+      const account = await clientWith(fetchMock).findUser({
+        connection: basicConnection,
+        email: 'dana@example.com',
+      });
+      expect(account).toBe('abc-123');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe(
+        'https://example.atlassian.net/rest/api/2/user/search?query=dana%40example.com',
+      );
+      expect(init.headers.Authorization).toMatch(/^Basic /);
+    });
+
+    it('falls back to the username parameter for Data Center', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce(new Response('nope', { status: 400 }))
+        .mockResolvedValueOnce(jsonResponse([{ name: 'dana' }]));
+      const account = await clientWith(fetchMock).findUser({
+        connection: tokenConnection,
+        email: 'dana@example.com',
+      });
+      expect(account).toBe('dana');
+      expect(fetchMock.mock.calls[0][0]).toContain('?query=');
+      expect(fetchMock.mock.calls[1][0]).toContain('?username=');
+    });
+
+    it('falls back when the query parameter matches nothing', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse([{ name: 'dana' }]));
+      const account = await clientWith(fetchMock).findUser({
+        connection: basicConnection,
+        email: 'dana@example.com',
+      });
+      expect(account).toBe('dana');
+    });
+
+    it('returns undefined when no account matches either parameter', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockImplementation(async () => jsonResponse([]));
+      const account = await clientWith(fetchMock).findUser({
+        connection: basicConnection,
+        email: 'ghost@example.com',
+      });
+      expect(account).toBeUndefined();
+    });
+
+    it('maps server errors and network failures to JiraApiError', async () => {
+      const errorFetch = jest
+        .fn()
+        .mockResolvedValue(new Response('boom', { status: 500, statusText: 'Oops' }));
+      await expect(
+        clientWith(errorFetch).findUser({
+          connection: basicConnection,
+          email: 'dana@example.com',
+        }),
+      ).rejects.toThrow(/responded with 500/);
+
+      const networkFetch = jest.fn().mockRejectedValue(new Error('socket hang up'));
+      await expect(
+        clientWith(networkFetch).findUser({
+          connection: basicConnection,
+          email: 'dana@example.com',
+        }),
+      ).rejects.toThrow(/Failed to reach Jira/);
+    });
+  });
+
   it('counts issues with maxResults 0 without fetching any', async () => {
     const fetchMock = jest.fn().mockResolvedValue(
       jsonResponse({ total: 137, issues: [] }),

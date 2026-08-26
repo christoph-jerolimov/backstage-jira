@@ -33,7 +33,10 @@ Issues are fetched exclusively through the `jira` backend plugin
 and never sees Jira credentials. The filter control is populated from the
 backend's configured filters (`jira.filters` / `jira.defaultFilter` in
 app-config; built-in "Unresolved" and "All issues" otherwise), with the
-default filter pre-selected. See
+default filter pre-selected. A built-in **"Assigned to me"** filter is
+always offered as well: the backend maps the signed-in user to their Jira
+account (via the User entity's profile email, or a `jira/user-email`
+annotation on the User entity) and shows only issues assigned to them. See
 [`plugins/jira-backend/README.md`](../jira-backend/README.md) for the
 connection (`connections` array, BEP-0014 shape) and filter configuration,
 including the connections-framework caveat and migration note.

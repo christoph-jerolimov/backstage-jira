@@ -6,6 +6,7 @@ import { catalogServiceRef } from '@backstage/plugin-catalog-node';
 import { createRouter } from './router';
 import { JiraClient } from './services/JiraClient';
 import { JiraConnectionsReader } from './services/JiraConnectionsReader';
+import { JiraUserResolver } from './services/JiraUserResolver';
 import { readFilterConfig } from './services/filterConfig';
 
 /**
@@ -28,6 +29,7 @@ export const jiraPlugin = createBackendPlugin({
         // Both throw InputError on invalid configuration, failing startup.
         const connections = JiraConnectionsReader.fromConfig(config);
         const filterConfig = readFilterConfig(config);
+        const jiraClient = new JiraClient({ logger });
 
         httpRouter.use(
           await createRouter({
@@ -36,7 +38,8 @@ export const jiraPlugin = createBackendPlugin({
             catalog,
             connections,
             filterConfig,
-            jiraClient: new JiraClient({ logger }),
+            jiraClient,
+            userResolver: new JiraUserResolver({ catalog, jiraClient }),
           }),
         );
       },

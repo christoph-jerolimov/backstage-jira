@@ -14,7 +14,12 @@ import {
 } from './annotations';
 import { buildJql, JiraApiError, JiraClient } from './services/JiraClient';
 import { JiraConnectionsReader } from './services/JiraConnectionsReader';
-import { JiraFilterConfig } from './services/filterConfig';
+import { JiraUserResolver } from './services/JiraUserResolver';
+import {
+  ASSIGNED_TO_ME_FILTER_ID,
+  ASSIGNED_TO_ME_FILTER_NAME,
+  JiraFilterConfig,
+} from './services/filterConfig';
 import {
   JiraIssuesResponse,
   JiraStatusCountsResponse,
@@ -55,6 +60,7 @@ interface JiraTarget {
   projectKeys: string[];
   component?: string;
   connection: JiraConnection;
+  credentials: Awaited<ReturnType<HttpAuthService['credentials']>>;
 }
 
 export async function createRouter({
@@ -64,6 +70,7 @@ export async function createRouter({
   connections,
   filterConfig,
   jiraClient,
+  userResolver,
 }: {
   logger: LoggerService;
   httpAuth: HttpAuthService;
@@ -71,15 +78,23 @@ export async function createRouter({
   connections: JiraConnectionsReader;
   filterConfig: JiraFilterConfig;
   jiraClient: JiraClient;
+  userResolver: JiraUserResolver;
 }): Promise<express.Router> {
   const router = Router();
   router.use(express.json());
 
-  const filterInfos = filterConfig.filters.map(f => ({
-    id: f.id,
-    name: f.name,
-    default: f.id === filterConfig.defaultFilterId,
-  }));
+  const filterInfos = [
+    ...filterConfig.filters.map(f => ({
+      id: f.id,
+      name: f.name,
+      default: f.id === filterConfig.defaultFilterId,
+    })),
+    {
+      id: ASSIGNED_TO_ME_FILTER_ID,
+      name: ASSIGNED_TO_ME_FILTER_NAME,
+      default: filterConfig.defaultFilterId === ASSIGNED_TO_ME_FILTER_ID,
+    },
+  ];
 
   // Authenticates the caller and resolves an entityRef query parameter to the
   // Jira projects, component, and connection its annotations select.
@@ -128,7 +143,7 @@ export async function createRouter({
       );
     }
 
-    return { projectKeys, component, connection };
+    return { projectKeys, component, connection, credentials };
   }
 
   // Runs a Jira call, mapping Jira-side failures to a 502 response. Returns
@@ -152,17 +167,28 @@ export async function createRouter({
   }
 
   router.get('/v1/issues', async (req, res) => {
-    const { projectKeys, component, connection } = await resolveTarget(req);
+    const { projectKeys, component, connection, credentials } =
+      await resolveTarget(req);
 
     const filterParam = singleParam(req.query.filter, 'filter');
     const filterId = filterParam ?? filterConfig.defaultFilterId;
-    const filter = filterConfig.filters.find(f => f.id === filterId);
-    if (!filter) {
-      throw new InputError(
-        `Unknown filter "${filterId}"; known filters: ${filterConfig.filters
-          .map(f => f.id)
-          .join(', ')}`,
-      );
+    let filterJql: string | undefined;
+    let assignee: string | undefined;
+    if (filterId === ASSIGNED_TO_ME_FILTER_ID) {
+      assignee = await userResolver.resolveAssignee({
+        credentials,
+        connection,
+      });
+    } else {
+      const filter = filterConfig.filters.find(f => f.id === filterId);
+      if (!filter) {
+        throw new InputError(
+          `Unknown filter "${filterId}"; known filters: ${filterInfos
+            .map(f => f.id)
+            .join(', ')}`,
+        );
+      }
+      filterJql = filter.jql || undefined;
     }
 
     const startAt = numberParam(req.query.startAt, 'startAt') ?? 0;
@@ -193,7 +219,8 @@ export async function createRouter({
     const jql = buildJql({
       projectKeys,
       component,
-      filterJql: filter.jql || undefined,
+      filterJql,
+      assignee,
       search,
       sortBy,
       order,
@@ -216,7 +243,7 @@ export async function createRouter({
       startAt: searchResult.startAt,
       pageSize: searchResult.pageSize,
       filters: filterInfos,
-      appliedFilter: filter.id,
+      appliedFilter: filterId,
       project: projects[0],
       projects,
     };

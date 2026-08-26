@@ -6,3 +6,9 @@ export const JIRA_COMPONENT_ANNOTATION = 'jira/component';
 
 /** Optional annotation selecting a Jira connection host. */
 export const JIRA_INSTANCE_ANNOTATION = 'jira/instance';
+
+/**
+ * Optional annotation on User entities overriding the email used to find
+ * the user's Jira account.
+ */
+export const JIRA_USER_EMAIL_ANNOTATION = 'jira/user-email';

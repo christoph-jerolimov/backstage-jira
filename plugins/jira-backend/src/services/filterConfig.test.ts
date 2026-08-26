@@ -76,6 +76,31 @@ describe('readFilterConfig', () => {
     ).toThrow(/Duplicate filter id "a"/);
   });
 
+  it('rejects a configured filter using the reserved assigned-to-me id', () => {
+    expect(() =>
+      readFilterConfig(
+        configFor({
+          filters: [{ id: 'assigned-to-me', name: 'Mine', jql: 'x = 1' }],
+        }),
+      ),
+    ).toThrow(/reserved/);
+  });
+
+  it('accepts assigned-to-me as the default filter', () => {
+    expect(
+      readFilterConfig(configFor({ defaultFilter: 'assigned-to-me' }))
+        .defaultFilterId,
+    ).toBe('assigned-to-me');
+    expect(
+      readFilterConfig(
+        configFor({
+          defaultFilter: 'assigned-to-me',
+          filters: [{ id: 'a', name: 'A', jql: 'x = 1' }],
+        }),
+      ).defaultFilterId,
+    ).toBe('assigned-to-me');
+  });
+
   it('rejects a default naming a non-existent configured filter', () => {
     expect(() =>
       readFilterConfig(

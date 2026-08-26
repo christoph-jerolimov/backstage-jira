@@ -17,6 +17,16 @@ export type SortField = (typeof SORT_FIELDS)[number];
 /** Sort direction. */
 export type SortOrder = 'asc' | 'desc';
 
+/** Stable id of a Jira status category. */
+export type StatusCategoryId = 'todo' | 'inprogress' | 'done';
+
+/** Response shape of `GET /v1/status-counts`. */
+export interface JiraStatusCountsResponse {
+  /** Counts per status category, ordered To Do, In Progress, Done. */
+  categories: Array<{ id: StatusCategoryId; name: string; count: number }>;
+  total: number;
+}
+
 /** A single Jira issue as returned by the issues API. */
 export interface JiraIssue {
   key: string;

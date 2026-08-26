@@ -70,6 +70,18 @@ describe('JiraClient', () => {
     expect(fetch.mock.calls[0][0]).not.toContain('search=');
   });
 
+  it('requests status counts for an entity ref', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ categories: [], total: 0 }),
+    });
+    const client = new JiraClient({ discoveryApi, fetchApi: { fetch } });
+    await client.getStatusCounts({ entityRef: 'component:default/my-service' });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/jira/v1/status-counts?entityRef=component%3Adefault%2Fmy-service',
+    );
+  });
+
   it('throws a ResponseError on failure responses', async () => {
     const fetch = jest.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: { message: 'nope' } }), {

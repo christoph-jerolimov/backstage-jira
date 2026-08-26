@@ -4,7 +4,12 @@ import {
   FetchApi,
 } from '@backstage/frontend-plugin-api';
 import { ResponseError } from '@backstage/errors';
-import { JiraIssuesResponse, SortField, SortOrder } from './types';
+import {
+  JiraIssuesResponse,
+  JiraStatusCountsResponse,
+  SortField,
+  SortOrder,
+} from './types';
 
 /** Query options for the issues API. */
 export interface GetIssuesOptions {
@@ -20,6 +25,9 @@ export interface GetIssuesOptions {
 /** Client for the jira-backend issues API. */
 export interface JiraApi {
   getIssues(options: GetIssuesOptions): Promise<JiraIssuesResponse>;
+  getStatusCounts(options: {
+    entityRef: string;
+  }): Promise<JiraStatusCountsResponse>;
 }
 
 export const jiraApiRef = createApiRef<JiraApi>({ id: 'plugin.jira.api' });
@@ -55,6 +63,20 @@ export class JiraClient implements JiraApi {
     }
     const response = await this.options.fetchApi.fetch(
       `${baseUrl}/v1/issues?${params}`,
+    );
+    if (!response.ok) {
+      throw await ResponseError.fromResponse(response);
+    }
+    return response.json();
+  }
+
+  async getStatusCounts(options: {
+    entityRef: string;
+  }): Promise<JiraStatusCountsResponse> {
+    const baseUrl = await this.options.discoveryApi.getBaseUrl('jira');
+    const params = new URLSearchParams({ entityRef: options.entityRef });
+    const response = await this.options.fetchApi.fetch(
+      `${baseUrl}/v1/status-counts?${params}`,
     );
     if (!response.ok) {
       throw await ResponseError.fromResponse(response);

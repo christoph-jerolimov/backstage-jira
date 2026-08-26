@@ -352,6 +352,107 @@ describe('createRouter', () => {
     expect(loggedLines.join('\n')).not.toContain(SECRET);
   });
 
+  describe('/v1/status-counts', () => {
+    function countingFetch(totals: number[]) {
+      const fetchMock = jest.fn();
+      totals.forEach(total =>
+        fetchMock.mockResolvedValueOnce(
+          new Response(JSON.stringify({ total, issues: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+      );
+      return fetchMock;
+    }
+
+    it('returns ordered category counts and their total', async () => {
+      const { app, fetchMock } = await setupApp({
+        fetchImpl: countingFetch([12, 5, 130]),
+      });
+      const response = await request(app).get(
+        '/v1/status-counts?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        categories: [
+          { id: 'todo', name: 'To Do', count: 12 },
+          { id: 'inprogress', name: 'In Progress', count: 5 },
+          { id: 'done', name: 'Done', count: 130 },
+        ],
+        total: 147,
+      });
+      const jqls = fetchMock.mock.calls.map(
+        ([, init]: [string, { body: string }]) => JSON.parse(init.body),
+      );
+      expect(jqls.map((b: { jql: string }) => b.jql)).toEqual([
+        'project = "PROJ" AND statusCategory = "To Do" ORDER BY updated DESC',
+        'project = "PROJ" AND statusCategory = "In Progress" ORDER BY updated DESC',
+        'project = "PROJ" AND statusCategory = "Done" ORDER BY updated DESC',
+      ]);
+      expect(jqls.every((b: { maxResults: number }) => b.maxResults === 0)).toBe(
+        true,
+      );
+    });
+
+    it('scopes counts to all annotated projects and the component', async () => {
+      const { app, fetchMock } = await setupApp({
+        fetchImpl: countingFetch([1, 2, 3]),
+      });
+      await request(app).get(
+        '/v1/status-counts?entityRef=component:default/multi',
+      );
+      const firstJql = JSON.parse(fetchMock.mock.calls[0][1].body).jql;
+      expect(firstJql).toContain('project IN ("PROJ1", "PROJ2")');
+
+      const componentFetch = countingFetch([1, 2, 3]);
+      const { app: app2, fetchMock: fetch2 } = await setupApp({
+        fetchImpl: componentFetch,
+      });
+      await request(app2).get(
+        '/v1/status-counts?entityRef=component:default/with-component',
+      );
+      expect(JSON.parse(fetch2.mock.calls[0][1].body).jql).toContain(
+        'component = "backend"',
+      );
+    });
+
+    it('returns 401 for unauthenticated requests', async () => {
+      const { app } = await setupApp();
+      const response = await request(app)
+        .get('/v1/status-counts?entityRef=component:default/annotated')
+        .set('Authorization', 'Bearer mock-none-token');
+      expect(response.status).toBe(401);
+    });
+
+    it('returns 404 for an entity without the annotation', async () => {
+      const { app } = await setupApp();
+      const response = await request(app).get(
+        '/v1/status-counts?entityRef=component:default/bare',
+      );
+      expect(response.status).toBe(404);
+    });
+
+    it('returns 500 when no jira connection is configured', async () => {
+      const { app } = await setupApp({ connections: [] });
+      const response = await request(app).get(
+        '/v1/status-counts?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(500);
+      expect(response.body.error.message).toMatch(/connections/);
+    });
+
+    it('returns 502 when Jira is unreachable', async () => {
+      const { app } = await setupApp({
+        fetchImpl: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+      });
+      const response = await request(app).get(
+        '/v1/status-counts?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(502);
+    });
+  });
+
   it('honors a configured default filter in requests without a filter', async () => {
     const { app, fetchMock } = await setupApp({
       jira: {

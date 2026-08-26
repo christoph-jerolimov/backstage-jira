@@ -17,6 +17,23 @@ export type SortOrder = 'asc' | 'desc';
 /** Maximum (and default) page size served by the issues API. */
 export const MAX_PAGE_SIZE = 50;
 
+/** Jira's three fixed status categories, in display order. */
+export const STATUS_CATEGORIES = [
+  { id: 'todo', name: 'To Do' },
+  { id: 'inprogress', name: 'In Progress' },
+  { id: 'done', name: 'Done' },
+] as const;
+
+/** Stable id of a Jira status category. */
+export type StatusCategoryId = (typeof STATUS_CATEGORIES)[number]['id'];
+
+/** Response shape of `GET /v1/status-counts`. */
+export interface JiraStatusCountsResponse {
+  /** Counts per status category, ordered To Do, In Progress, Done. */
+  categories: Array<{ id: StatusCategoryId; name: string; count: number }>;
+  total: number;
+}
+
 /** A single Jira issue as returned by the issues API. */
 export interface JiraIssue {
   key: string;

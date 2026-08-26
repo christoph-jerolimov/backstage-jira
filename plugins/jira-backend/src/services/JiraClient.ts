@@ -13,6 +13,7 @@ export function buildJql(options: {
   component?: string;
   filterJql?: string;
   search?: string;
+  statusCategory?: string;
   sortBy?: SortField;
   order?: SortOrder;
 }): string {
@@ -27,6 +28,9 @@ export function buildJql(options: {
   }
   if (options.filterJql) {
     clauses.push(`(${options.filterJql})`);
+  }
+  if (options.statusCategory) {
+    clauses.push(`statusCategory = ${toJqlString(options.statusCategory)}`);
   }
   if (options.search) {
     clauses.push(`summary ~ ${toJqlString(options.search)}`);
@@ -99,6 +103,15 @@ export class JiraClient {
       return `Basic ${encoded}`;
     }
     return `Bearer ${auth.token}`;
+  }
+
+  /** Counts the issues matching a JQL query without fetching any of them. */
+  async countIssues(options: {
+    connection: JiraConnection;
+    jql: string;
+  }): Promise<number> {
+    const result = await this.searchIssues({ ...options, maxResults: 0 });
+    return result.total;
   }
 
   async searchIssues(options: {

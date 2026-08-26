@@ -32,6 +32,42 @@ describe('JiraClient', () => {
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('&filter=all'),
     );
+    expect(fetch.mock.calls[0][0]).not.toMatch(/startAt|limit|sortBy|order|search/);
+  });
+
+  it('adds paging, sorting, and search parameters only when set', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ issues: [] }),
+    });
+    const client = new JiraClient({ discoveryApi, fetchApi: { fetch } });
+    await client.getIssues({
+      entityRef: 'component:default/my-service',
+      startAt: 50,
+      limit: 25,
+      sortBy: 'priority',
+      order: 'asc',
+      search: 'flux capacitor',
+    });
+    const url = fetch.mock.calls[0][0] as string;
+    expect(url).toContain('startAt=50');
+    expect(url).toContain('limit=25');
+    expect(url).toContain('sortBy=priority');
+    expect(url).toContain('order=asc');
+    expect(url).toContain('search=flux+capacitor');
+  });
+
+  it('omits an empty search string', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ issues: [] }),
+    });
+    const client = new JiraClient({ discoveryApi, fetchApi: { fetch } });
+    await client.getIssues({
+      entityRef: 'component:default/my-service',
+      search: '',
+    });
+    expect(fetch.mock.calls[0][0]).not.toContain('search=');
   });
 
   it('throws a ResponseError on failure responses', async () => {

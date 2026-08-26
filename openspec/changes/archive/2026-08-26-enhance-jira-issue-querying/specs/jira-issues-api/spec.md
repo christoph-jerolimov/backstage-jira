@@ -1,9 +1,4 @@
-# jira-issues-api Specification
-
-## Purpose
-Backend REST API that resolves a catalog entity's Jira annotations and returns its Jira issues, so that all Jira access happens server-side with centrally managed credentials.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Issue lookup by entity ref
 
@@ -82,17 +77,3 @@ The endpoint SHALL validate its inputs and map failures to distinct, human-reada
 
 - **WHEN** a request carries a negative or non-numeric `startAt` or `limit`
 - **THEN** the response is `400`, and a `limit` above the server maximum is reduced to the maximum rather than rejected
-
-### Requirement: Caller authentication
-
-The endpoint SHALL require an authenticated Backstage caller (user or service credentials) and SHALL reject unauthenticated requests. The catalog lookup SHALL be performed with credentials issued for the backend on behalf of the caller, so catalog permission rules still apply.
-
-#### Scenario: Unauthenticated request
-
-- **WHEN** a request arrives without valid Backstage credentials
-- **THEN** the response is `401`
-
-#### Scenario: Entity hidden from caller
-
-- **WHEN** the catalog denies the caller access to the requested entity
-- **THEN** the endpoint responds as if the entity does not exist (`404`)

@@ -6,24 +6,36 @@ happens here, server-side, so credentials never reach the browser.
 
 ## API
 
-`GET /api/jira/v1/issues?entityRef=<ref>&filter=<id>` (Backstage user or
-service credentials required)
+`GET /api/jira/v1/issues?entityRef=<ref>` (Backstage user or service
+credentials required)
 
 - Resolves the entity via the catalog (with on-behalf-of credentials, so
   catalog permissions apply), reads its Jira annotations, and queries Jira
   with JQL assembled server-side.
-- `filter` must be one of the configured filter ids; when omitted, the
-  default filter applies.
-- Responds with `{ issues, total, filters, appliedFilter, project }`.
-- Errors: `400` invalid entityRef/filter, `401` unauthenticated, `404`
-  unknown entity or missing annotation, `500` missing/invalid Jira
-  connection config, `502` Jira unreachable or rejecting the query.
+- Optional query parameters:
+  - `filter`: one of the configured filter ids; the default filter applies
+    when omitted.
+  - `startAt`, `limit`: offset pagination; `limit` is capped at 50.
+  - `sortBy` (`updated`, `created`, `key`, `priority`, `status`, `summary`)
+    and `order` (`asc`/`desc`): JQL `ORDER BY` sorting. Default is `updated`
+    descending. Note that Jira sorts `priority` and `status` by their rank
+    order, matching Jira's own UI, not alphabetically.
+  - `search`: matched against issue summaries with the JQL `~` operator
+    (Jira's word-based "contains" matching, not a strict substring match);
+    the text is escaped and can never extend the query.
+- Responds with `{ issues, total, startAt, pageSize, filters,
+  appliedFilter, project, projects }` (`project` is the first annotated
+  project, kept for compatibility).
+- Errors: `400` invalid entityRef/filter/sort/pagination values, `401`
+  unauthenticated, `404` unknown entity or missing annotation, `500`
+  missing/invalid Jira connection config, `502` Jira unreachable or
+  rejecting the query.
 
 ## Entity annotations
 
 | Annotation         | Meaning                                                        |
 | ------------------ | -------------------------------------------------------------- |
-| `jira/project-key` | Jira project key; required for the Jira tab to appear.         |
+| `jira/project-key` | Jira project key, or a comma-separated list (`PROJ1,PROJ2`) queried together; required for the Jira tab to appear. |
 | `jira/component`   | Optional Jira component to narrow issues.                      |
 | `jira/instance`    | Optional connection host when several Jira hosts are configured. |
 

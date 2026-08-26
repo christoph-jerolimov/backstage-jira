@@ -14,6 +14,7 @@ metadata:
   name: example-website
   annotations:
     # Shows the Jira tab on this entity; see plugins/jira/README.md
+    # Accepts one project key or a comma-separated list: PROJ1,PROJ2
     jira/project-key: PROJ
     # jira/component: backend
     # jira/instance: example.atlassian.net

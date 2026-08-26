@@ -15,7 +15,37 @@ import {
 import { buildJql, JiraApiError, JiraClient } from './services/JiraClient';
 import { JiraConnectionsReader } from './services/JiraConnectionsReader';
 import { JiraFilterConfig } from './services/filterConfig';
-import { JiraIssuesResponse } from './types';
+import {
+  JiraIssuesResponse,
+  MAX_PAGE_SIZE,
+  SORT_FIELDS,
+  SortField,
+  SortOrder,
+} from './types';
+
+function singleParam(value: unknown, name: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new InputError(`Query parameter "${name}" must be a single string`);
+  }
+  return value;
+}
+
+function numberParam(value: unknown, name: string): number | undefined {
+  const raw = singleParam(value, name);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new InputError(
+      `Query parameter "${name}" must be a non-negative integer`,
+    );
+  }
+  return parsed;
+}
 
 export async function createRouter({
   logger,
@@ -57,10 +87,7 @@ export async function createRouter({
       throw new InputError(`Invalid entity ref "${entityRef}"`);
     }
 
-    const filterParam = req.query.filter;
-    if (filterParam !== undefined && typeof filterParam !== 'string') {
-      throw new InputError('Query parameter "filter" must be a single string');
-    }
+    const filterParam = singleParam(req.query.filter, 'filter');
     const filterId = filterParam ?? filterConfig.defaultFilterId;
     const filter = filterConfig.filters.find(f => f.id === filterId);
     if (!filter) {
@@ -71,13 +98,41 @@ export async function createRouter({
       );
     }
 
+    const startAt = numberParam(req.query.startAt, 'startAt') ?? 0;
+    const limit = Math.min(
+      numberParam(req.query.limit, 'limit') ?? MAX_PAGE_SIZE,
+      MAX_PAGE_SIZE,
+    );
+    const sortByParam = singleParam(req.query.sortBy, 'sortBy');
+    if (
+      sortByParam !== undefined &&
+      !SORT_FIELDS.includes(sortByParam as SortField)
+    ) {
+      throw new InputError(
+        `Unknown sort field "${sortByParam}"; allowed fields: ${SORT_FIELDS.join(', ')}`,
+      );
+    }
+    const sortBy = (sortByParam as SortField | undefined) ?? 'updated';
+    const orderParam = singleParam(req.query.order, 'order');
+    if (orderParam !== undefined && orderParam !== 'asc' && orderParam !== 'desc') {
+      throw new InputError(
+        `Invalid order "${orderParam}"; allowed values: asc, desc`,
+      );
+    }
+    const order: SortOrder =
+      orderParam ?? (sortByParam === undefined ? 'desc' : 'asc');
+    const search = singleParam(req.query.search, 'search')?.trim() || undefined;
+
     const entity = await catalog.getEntityByRef(parsedRef, { credentials });
     if (!entity) {
       throw new NotFoundError(`Entity "${entityRef}" not found`);
     }
     const annotations = entity.metadata.annotations ?? {};
-    const projectKey = annotations[JIRA_PROJECT_KEY_ANNOTATION];
-    if (!projectKey) {
+    const projectKeys = (annotations[JIRA_PROJECT_KEY_ANNOTATION] ?? '')
+      .split(',')
+      .map(key => key.trim())
+      .filter(Boolean);
+    if (projectKeys.length === 0) {
       throw new NotFoundError(
         `Entity "${entityRef}" has no "${JIRA_PROJECT_KEY_ANNOTATION}" annotation`,
       );
@@ -98,14 +153,22 @@ export async function createRouter({
     }
 
     const jql = buildJql({
-      projectKey,
+      projectKeys,
       component,
       filterJql: filter.jql || undefined,
+      search,
+      sortBy,
+      order,
     });
 
     let searchResult;
     try {
-      searchResult = await jiraClient.searchIssues({ connection, jql });
+      searchResult = await jiraClient.searchIssues({
+        connection,
+        jql,
+        startAt,
+        maxResults: limit,
+      });
     } catch (e) {
       if (e instanceof JiraApiError) {
         logger.warn(`Jira request failed: ${e.message}`);
@@ -117,15 +180,19 @@ export async function createRouter({
       throw e;
     }
 
+    const projects = projectKeys.map(key => ({
+      key,
+      url: `${connection.baseUrl}/browse/${encodeURIComponent(key)}`,
+    }));
     const response: JiraIssuesResponse = {
       issues: searchResult.issues,
       total: searchResult.total,
+      startAt: searchResult.startAt,
+      pageSize: searchResult.pageSize,
       filters: filterInfos,
       appliedFilter: filter.id,
-      project: {
-        key: projectKey,
-        url: `${connection.baseUrl}/browse/${encodeURIComponent(projectKey)}`,
-      },
+      project: projects[0],
+      projects,
     };
     res.json(response);
   });

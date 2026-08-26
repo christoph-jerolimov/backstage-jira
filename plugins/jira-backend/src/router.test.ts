@@ -36,6 +36,19 @@ const componentEntity = {
   spec: { type: 'service' },
 };
 
+const multiProjectEntity = {
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: {
+    name: 'multi',
+    namespace: 'default',
+    annotations: {
+      'jira/project-key': 'PROJ1, PROJ2',
+    },
+  },
+  spec: { type: 'service' },
+};
+
 const bareEntity = {
   apiVersion: 'backstage.io/v1alpha1',
   kind: 'Component',
@@ -91,7 +104,7 @@ async function setupApp(options?: {
     logger,
     httpAuth: mockServices.httpAuth(),
     catalog: catalogServiceMock({
-      entities: [annotatedEntity, componentEntity, bareEntity],
+      entities: [annotatedEntity, componentEntity, multiProjectEntity, bareEntity],
     }),
     connections: JiraConnectionsReader.fromConfig(config),
     filterConfig: readFilterConfig(config),
@@ -128,10 +141,18 @@ describe('createRouter', () => {
         { id: 'all', name: 'All issues', default: false },
       ],
       appliedFilter: 'unresolved',
+      startAt: 0,
+      pageSize: 50,
       project: {
         key: 'PROJ',
         url: 'https://example.atlassian.net/browse/PROJ',
       },
+      projects: [
+        {
+          key: 'PROJ',
+          url: 'https://example.atlassian.net/browse/PROJ',
+        },
+      ],
     });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.jql).toBe(
@@ -150,6 +171,99 @@ describe('createRouter', () => {
     expect(body.jql).toBe(
       'project = "PROJ" AND component = "backend" ORDER BY updated DESC',
     );
+  });
+
+  it('queries multiple projects with project IN', async () => {
+    const { app, fetchMock } = await setupApp();
+    const response = await request(app).get(
+      '/v1/issues?entityRef=component:default/multi&filter=all',
+    );
+    expect(response.status).toBe(200);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.jql).toBe(
+      'project IN ("PROJ1", "PROJ2") ORDER BY updated DESC',
+    );
+    expect(response.body.projects).toEqual([
+      { key: 'PROJ1', url: 'https://example.atlassian.net/browse/PROJ1' },
+      { key: 'PROJ2', url: 'https://example.atlassian.net/browse/PROJ2' },
+    ]);
+    expect(response.body.project.key).toBe('PROJ1');
+  });
+
+  it('passes pagination through and caps the limit', async () => {
+    const { app, fetchMock } = await setupApp();
+    const response = await request(app).get(
+      '/v1/issues?entityRef=component:default/annotated&startAt=100&limit=200',
+    );
+    expect(response.status).toBe(200);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.startAt).toBe(100);
+    expect(body.maxResults).toBe(50);
+    expect(response.body.startAt).toBe(100);
+    expect(response.body.pageSize).toBe(50);
+  });
+
+  it('applies whitelisted sorting and search', async () => {
+    const { app, fetchMock } = await setupApp();
+    const response = await request(app).get(
+      '/v1/issues?entityRef=component:default/annotated&filter=all&sortBy=priority&order=asc&search=flux',
+    );
+    expect(response.status).toBe(200);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.jql).toBe(
+      'project = "PROJ" AND summary ~ "flux" ORDER BY priority ASC',
+    );
+  });
+
+  it('defaults order to asc when only sortBy is given', async () => {
+    const { app, fetchMock } = await setupApp();
+    await request(app).get(
+      '/v1/issues?entityRef=component:default/annotated&filter=all&sortBy=key',
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.jql).toContain('ORDER BY key ASC');
+  });
+
+  it('rejects a non-whitelisted sort field without calling Jira', async () => {
+    const { app, fetchMock } = await setupApp();
+    const response = await request(app).get(
+      '/v1/issues?entityRef=component:default/annotated&sortBy=duedate',
+    );
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toMatch(
+      /updated, created, key, priority, status, summary/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid order value', async () => {
+    const { app } = await setupApp();
+    const response = await request(app).get(
+      '/v1/issues?entityRef=component:default/annotated&order=sideways',
+    );
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toMatch(/asc, desc/);
+  });
+
+  it.each(['startAt=-1', 'startAt=abc', 'limit=-5', 'limit=1.5'])(
+    'rejects invalid pagination %s',
+    async param => {
+      const { app } = await setupApp();
+      const response = await request(app).get(
+        `/v1/issues?entityRef=component:default/annotated&${param}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toMatch(/non-negative integer/);
+    },
+  );
+
+  it('treats a whitespace-only search as absent', async () => {
+    const { app, fetchMock } = await setupApp();
+    await request(app).get(
+      '/v1/issues?entityRef=component:default/annotated&filter=all&search=%20%20',
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.jql).toBe('project = "PROJ" ORDER BY updated DESC');
   });
 
   it('rejects a missing entityRef', async () => {

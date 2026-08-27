@@ -221,6 +221,155 @@ describe('JiraClient', () => {
     });
   });
 
+  describe('getIssue', () => {
+    const detailResponse = {
+      key: 'PROJ-7',
+      fields: {
+        summary: 'Fix the flux capacitor',
+        description: 'It <b>broke</b>\n\nagain',
+        labels: ['hardware', 'urgent'],
+        reporter: { displayName: 'Rae' },
+        assignee: { displayName: 'Dana' },
+        issuetype: { name: 'Bug' },
+        status: { name: 'Open', statusCategory: { name: 'To Do' } },
+        priority: { name: 'High' },
+        created: '2026-08-01T10:00:00.000+0000',
+        updated: '2026-08-20T10:00:00.000+0000',
+        comment: {
+          total: 7,
+          comments: [1, 2, 3, 4, 5, 6, 7].map(i => ({
+            author: { displayName: `Author ${i}` },
+            created: `2026-08-0${i}T10:00:00.000+0000`,
+            body: `Comment ${i}`,
+          })),
+        },
+      },
+    };
+
+    it('maps detail fields and caps comments to the newest five, newest first', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(detailResponse));
+      const detail = await clientWith(fetchMock).getIssue({
+        connection: basicConnection,
+        issueKey: 'PROJ-7',
+      });
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toContain('/rest/api/2/issue/PROJ-7?fields=');
+      expect(url).toContain('description');
+      expect(init.headers.Authorization).toMatch(/^Basic /);
+      expect(detail).toEqual(
+        expect.objectContaining({
+          key: 'PROJ-7',
+          url: 'https://example.atlassian.net/browse/PROJ-7',
+          description: 'It <b>broke</b>\n\nagain',
+          labels: ['hardware', 'urgent'],
+          reporter: { displayName: 'Rae' },
+          commentTotal: 7,
+        }),
+      );
+      expect(detail?.comments.map(c => c.body)).toEqual([
+        'Comment 7',
+        'Comment 6',
+        'Comment 5',
+        'Comment 4',
+        'Comment 3',
+      ]);
+    });
+
+    it('returns undefined when Jira does not know the key', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(new Response('nope', { status: 404 }));
+      await expect(
+        clientWith(fetchMock).getIssue({
+          connection: basicConnection,
+          issueKey: 'PROJ-999',
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('maps other failures to JiraApiError', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(new Response('boom', { status: 500, statusText: 'Oops' }));
+      await expect(
+        clientWith(fetchMock).getIssue({
+          connection: basicConnection,
+          issueKey: 'PROJ-7',
+        }),
+      ).rejects.toThrow(/responded with 500/);
+    });
+  });
+
+  describe('sprints', () => {
+    it('returns the first active sprint', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse({
+          values: [
+            {
+              id: 42,
+              name: 'Sprint 12',
+              state: 'active',
+              startDate: '2026-08-20T00:00:00.000Z',
+              endDate: '2026-09-03T00:00:00.000Z',
+              goal: 'Ship it',
+            },
+          ],
+        }),
+      );
+      const sprint = await clientWith(fetchMock).getActiveSprint({
+        connection: basicConnection,
+        boardId: 7,
+      });
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        'https://example.atlassian.net/rest/agile/1.0/board/7/sprint?state=active',
+      );
+      expect(sprint).toEqual({
+        id: 42,
+        name: 'Sprint 12',
+        state: 'active',
+        startDate: '2026-08-20T00:00:00.000Z',
+        endDate: '2026-09-03T00:00:00.000Z',
+        goal: 'Ship it',
+      });
+    });
+
+    it('returns undefined when the board has no active sprint', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse({ values: [] }));
+      await expect(
+        clientWith(fetchMock).getActiveSprint({
+          connection: basicConnection,
+          boardId: 7,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('maps sprint issues with the standard issue mapper', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse({
+          total: 1,
+          issues: [
+            { key: 'PROJ-8', fields: { summary: 'Sprint task', assignee: null } },
+          ],
+        }),
+      );
+      const result = await clientWith(fetchMock).getSprintIssues({
+        connection: basicConnection,
+        sprintId: 42,
+      });
+      expect(fetchMock.mock.calls[0][0]).toContain(
+        '/rest/agile/1.0/sprint/42/issue?maxResults=50',
+      );
+      expect(result.total).toBe(1);
+      expect(result.issues[0]).toEqual(
+        expect.objectContaining({
+          key: 'PROJ-8',
+          url: 'https://example.atlassian.net/browse/PROJ-8',
+          summary: 'Sprint task',
+        }),
+      );
+    });
+  });
+
   it('counts issues with maxResults 0 without fetching any', async () => {
     const fetchMock = jest.fn().mockResolvedValue(
       jsonResponse({ total: 137, issues: [] }),

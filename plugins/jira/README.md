@@ -13,7 +13,15 @@ metadata:
     jira/project-key: PROJ # or several projects: PROJ1,PROJ2
     # jira/component: backend # optional: narrow to a Jira component
     # jira/instance: example.atlassian.net # optional: pick a Jira host
+    # jira/board-id: "42" # optional: adds a Sprint view (Jira Software board id)
 ```
+
+Clicking an issue row opens an in-page detail dialog — description, labels,
+reporter, and the most recent comments, all rendered as plain text — with an
+"Open in Jira" link; the issue-key link in the row still goes straight to
+Jira. Entities with a `jira/board-id` annotation additionally get an
+Issues/Sprint toggle showing the board's active sprint (name, dates, goal)
+and its issues.
 
 A compact **Jira summary card** on the entity Overview page shows issue
 counts by status category (To Do / In Progress / Done) with a link into

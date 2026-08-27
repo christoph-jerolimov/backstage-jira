@@ -5,7 +5,9 @@ import {
 } from '@backstage/frontend-plugin-api';
 import { ResponseError } from '@backstage/errors';
 import {
+  JiraIssueDetail,
   JiraIssuesResponse,
+  JiraSprintResponse,
   JiraStatusCountsResponse,
   SortField,
   SortOrder,
@@ -28,6 +30,11 @@ export interface JiraApi {
   getStatusCounts(options: {
     entityRef: string;
   }): Promise<JiraStatusCountsResponse>;
+  getIssueDetail(options: {
+    entityRef: string;
+    issueKey: string;
+  }): Promise<JiraIssueDetail>;
+  getSprint(options: { entityRef: string }): Promise<JiraSprintResponse>;
 }
 
 export const jiraApiRef = createApiRef<JiraApi>({ id: 'plugin.jira.api' });
@@ -73,10 +80,28 @@ export class JiraClient implements JiraApi {
   async getStatusCounts(options: {
     entityRef: string;
   }): Promise<JiraStatusCountsResponse> {
+    return this.#get('v1/status-counts', options.entityRef);
+  }
+
+  async getIssueDetail(options: {
+    entityRef: string;
+    issueKey: string;
+  }): Promise<JiraIssueDetail> {
+    return this.#get(
+      `v1/issues/${encodeURIComponent(options.issueKey)}`,
+      options.entityRef,
+    );
+  }
+
+  async getSprint(options: { entityRef: string }): Promise<JiraSprintResponse> {
+    return this.#get('v1/sprint', options.entityRef);
+  }
+
+  async #get<T>(path: string, entityRef: string): Promise<T> {
     const baseUrl = await this.options.discoveryApi.getBaseUrl('jira');
-    const params = new URLSearchParams({ entityRef: options.entityRef });
+    const params = new URLSearchParams({ entityRef });
     const response = await this.options.fetchApi.fetch(
-      `${baseUrl}/v1/status-counts?${params}`,
+      `${baseUrl}/${path}?${params}`,
     );
     if (!response.ok) {
       throw await ResponseError.fromResponse(response);

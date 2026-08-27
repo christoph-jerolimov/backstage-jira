@@ -1,7 +1,15 @@
 import { LoggerService } from '@backstage/backend-plugin-api';
 import { z } from 'zod/v3';
 import { JiraConnection } from './JiraConnectionsReader';
-import { JiraIssue, MAX_PAGE_SIZE, SortField, SortOrder } from '../types';
+import {
+  JiraIssue,
+  JiraIssueDetail,
+  JiraSprint,
+  MAX_COMMENTS,
+  MAX_PAGE_SIZE,
+  SortField,
+  SortOrder,
+} from '../types';
 
 /** Escapes a value for interpolation into JQL as a quoted string. */
 export function toJqlString(value: string): string {
@@ -49,32 +57,98 @@ export class JiraApiError extends Error {
   name = 'JiraApiError';
 }
 
+const issueFieldsSchema = z.object({
+  summary: z.string().nullish(),
+  created: z.string().nullish(),
+  updated: z.string().nullish(),
+  issuetype: z
+    .object({ name: z.string().nullish(), iconUrl: z.string().nullish() })
+    .nullish(),
+  status: z
+    .object({
+      name: z.string().nullish(),
+      statusCategory: z.object({ name: z.string().nullish() }).nullish(),
+    })
+    .nullish(),
+  priority: z
+    .object({ name: z.string().nullish(), iconUrl: z.string().nullish() })
+    .nullish(),
+  assignee: z.object({ displayName: z.string().nullish() }).nullish(),
+});
+
+const issueSchema = z.object({
+  key: z.string(),
+  fields: issueFieldsSchema,
+});
+
 const searchResponseSchema = z.object({
   total: z.number(),
-  issues: z.array(
+  issues: z.array(issueSchema),
+});
+
+const issueDetailSchema = z.object({
+  key: z.string(),
+  fields: issueFieldsSchema.extend({
+    description: z.string().nullish(),
+    labels: z.array(z.string()).nullish(),
+    reporter: z.object({ displayName: z.string().nullish() }).nullish(),
+    comment: z
+      .object({
+        total: z.number().nullish(),
+        comments: z
+          .array(
+            z.object({
+              author: z.object({ displayName: z.string().nullish() }).nullish(),
+              created: z.string().nullish(),
+              body: z.string().nullish(),
+            }),
+          )
+          .nullish(),
+      })
+      .nullish(),
+  }),
+});
+
+const sprintListSchema = z.object({
+  values: z.array(
     z.object({
-      key: z.string(),
-      fields: z.object({
-        summary: z.string().nullish(),
-        created: z.string().nullish(),
-        updated: z.string().nullish(),
-        issuetype: z
-          .object({ name: z.string().nullish(), iconUrl: z.string().nullish() })
-          .nullish(),
-        status: z
-          .object({
-            name: z.string().nullish(),
-            statusCategory: z.object({ name: z.string().nullish() }).nullish(),
-          })
-          .nullish(),
-        priority: z
-          .object({ name: z.string().nullish(), iconUrl: z.string().nullish() })
-          .nullish(),
-        assignee: z.object({ displayName: z.string().nullish() }).nullish(),
-      }),
+      id: z.number(),
+      name: z.string(),
+      state: z.string(),
+      startDate: z.string().nullish(),
+      endDate: z.string().nullish(),
+      goal: z.string().nullish(),
     }),
   ),
 });
+
+function mapIssue(
+  issue: z.infer<typeof issueSchema>,
+  connection: JiraConnection,
+): JiraIssue {
+  return {
+    key: issue.key,
+    url: `${connection.baseUrl}/browse/${encodeURIComponent(issue.key)}`,
+    summary: issue.fields.summary ?? '',
+    type: {
+      name: issue.fields.issuetype?.name ?? undefined,
+      iconUrl: issue.fields.issuetype?.iconUrl ?? undefined,
+    },
+    status: {
+      name: issue.fields.status?.name ?? undefined,
+      category: issue.fields.status?.statusCategory?.name ?? undefined,
+    },
+    priority: {
+      name: issue.fields.priority?.name ?? undefined,
+      iconUrl: issue.fields.priority?.iconUrl ?? undefined,
+    },
+    assignee: issue.fields.assignee?.displayName
+      ? { displayName: issue.fields.assignee.displayName }
+      : undefined,
+    created: issue.fields.created ?? undefined,
+    updated: issue.fields.updated ?? undefined,
+  };
+}
 
 const userSearchResponseSchema = z.array(
   z.object({
@@ -251,28 +325,137 @@ export class JiraClient {
       total: parsed.data.total,
       startAt,
       pageSize: maxResults,
-      issues: parsed.data.issues.map(issue => ({
-        key: issue.key,
-        url: `${connection.baseUrl}/browse/${encodeURIComponent(issue.key)}`,
-        summary: issue.fields.summary ?? '',
-        type: {
-          name: issue.fields.issuetype?.name ?? undefined,
-          iconUrl: issue.fields.issuetype?.iconUrl ?? undefined,
-        },
-        status: {
-          name: issue.fields.status?.name ?? undefined,
-          category: issue.fields.status?.statusCategory?.name ?? undefined,
-        },
-        priority: {
-          name: issue.fields.priority?.name ?? undefined,
-          iconUrl: issue.fields.priority?.iconUrl ?? undefined,
-        },
-        assignee: issue.fields.assignee?.displayName
-          ? { displayName: issue.fields.assignee.displayName }
-          : undefined,
-        created: issue.fields.created ?? undefined,
-        updated: issue.fields.updated ?? undefined,
-      })),
+      issues: parsed.data.issues.map(issue => mapIssue(issue, connection)),
     };
+  }
+
+  /**
+   * Fetches the full detail of one issue, or undefined when Jira does not
+   * know the key.
+   */
+  async getIssue(options: {
+    connection: JiraConnection;
+    issueKey: string;
+  }): Promise<JiraIssueDetail | undefined> {
+    const { connection, issueKey } = options;
+    const fields = [...REQUESTED_FIELDS, 'description', 'labels', 'reporter', 'comment'];
+    const url =
+      `${connection.apiBaseUrl}/rest/api/2/issue/` +
+      `${encodeURIComponent(issueKey)}?fields=${fields.join(',')}`;
+    const body = await this.#getJson(connection, url, { allow404: true });
+    if (body === undefined) {
+      return undefined;
+    }
+    const parsed = issueDetailSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new JiraApiError(
+        `Unexpected issue response shape from Jira at ${connection.host}`,
+      );
+    }
+    const detail = parsed.data;
+    const allComments = detail.fields.comment?.comments ?? [];
+    return {
+      ...mapIssue(detail, connection),
+      description: detail.fields.description ?? '',
+      labels: detail.fields.labels ?? [],
+      reporter: detail.fields.reporter?.displayName
+        ? { displayName: detail.fields.reporter.displayName }
+        : undefined,
+      // Jira returns comments oldest-first; keep the newest MAX_COMMENTS,
+      // newest first.
+      comments: allComments
+        .slice(-MAX_COMMENTS)
+        .reverse()
+        .map(comment => ({
+          author: comment.author?.displayName ?? undefined,
+          created: comment.created ?? undefined,
+          body: comment.body ?? '',
+        })),
+      commentTotal: detail.fields.comment?.total ?? allComments.length,
+    };
+  }
+
+  /** Returns the first active sprint of a board, or undefined. */
+  async getActiveSprint(options: {
+    connection: JiraConnection;
+    boardId: number;
+  }): Promise<JiraSprint | undefined> {
+    const { connection, boardId } = options;
+    const url = `${connection.apiBaseUrl}/rest/agile/1.0/board/${boardId}/sprint?state=active`;
+    const body = await this.#getJson(connection, url);
+    const parsed = sprintListSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new JiraApiError(
+        `Unexpected sprint response shape from Jira at ${connection.host}`,
+      );
+    }
+    const sprint = parsed.data.values[0];
+    if (!sprint) {
+      return undefined;
+    }
+    return {
+      id: sprint.id,
+      name: sprint.name,
+      state: sprint.state,
+      startDate: sprint.startDate ?? undefined,
+      endDate: sprint.endDate ?? undefined,
+      goal: sprint.goal ?? undefined,
+    };
+  }
+
+  /** Fetches the issues of a sprint, capped at the standard page size. */
+  async getSprintIssues(options: {
+    connection: JiraConnection;
+    sprintId: number;
+  }): Promise<{ issues: JiraIssue[]; total: number }> {
+    const { connection, sprintId } = options;
+    const url =
+      `${connection.apiBaseUrl}/rest/agile/1.0/sprint/${sprintId}/issue` +
+      `?maxResults=${MAX_PAGE_SIZE}&fields=${REQUESTED_FIELDS.join(',')}`;
+    const body = await this.#getJson(connection, url);
+    const parsed = searchResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new JiraApiError(
+        `Unexpected sprint issues response shape from Jira at ${connection.host}`,
+      );
+    }
+    return {
+      total: parsed.data.total,
+      issues: parsed.data.issues.map(issue => mapIssue(issue, connection)),
+    };
+  }
+
+  /**
+   * Authenticated GET returning the parsed JSON body, undefined on a 404
+   * when `allow404` is set, and a JiraApiError otherwise.
+   */
+  async #getJson(
+    connection: JiraConnection,
+    url: string,
+    options?: { allow404?: boolean },
+  ): Promise<unknown | undefined> {
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: this.authHeader(connection),
+        },
+      });
+    } catch (e) {
+      throw new JiraApiError(
+        `Failed to reach Jira at ${connection.host}: ${(e as Error).message}`,
+      );
+    }
+    if (options?.allow404 && response.status === 404) {
+      return undefined;
+    }
+    if (!response.ok) {
+      throw new JiraApiError(
+        `Jira at ${connection.host} responded with ${response.status} ${response.statusText}`,
+      );
+    }
+    return response.json();
   }
 }

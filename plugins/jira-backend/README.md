@@ -31,6 +31,26 @@ credentials required)
   missing/invalid Jira connection config, `502` Jira unreachable or
   rejecting the query.
 
+`GET /api/jira/v1/issues/<issueKey>?entityRef=<ref>` (same auth)
+
+- Full detail of one issue: fields, labels, reporter, raw description text,
+  and the five most recent comments (raw text, newest first) with the total
+  comment count. Description and comments are passed through as text — the
+  frontend renders them literally.
+- Only keys belonging to the entity's annotated projects are served
+  (case-insensitive prefix match); other keys get a `404` without any Jira
+  call, malformed keys a `400`.
+
+`GET /api/jira/v1/sprint?entityRef=<ref>` (same auth)
+
+- The active sprint of the board named by the entity's `jira/board-id`
+  annotation (Jira Software's Agile API), with the sprint's issues (capped
+  at 50, `total` reported): `{ sprint, issues, total }`; `sprint` is `null`
+  when the board has no active sprint. With parallel sprints enabled, the
+  first active sprint is used.
+- Missing or non-numeric `jira/board-id` yields a `404` naming the
+  annotation. Requires Jira Software (the `/rest/agile/1.0` API).
+
 `GET /api/jira/v1/status-counts?entityRef=<ref>` (same auth)
 
 - Returns exact issue counts per Jira status category for the entity's
@@ -47,6 +67,7 @@ credentials required)
 | `jira/project-key` | Jira project key, or a comma-separated list (`PROJ1,PROJ2`) queried together; required for the Jira tab to appear. |
 | `jira/component`   | Optional Jira component to narrow issues.                      |
 | `jira/instance`    | Optional connection host when several Jira hosts are configured. |
+| `jira/board-id`    | Optional numeric Jira board id; enables the Sprint view in the Jira tab. |
 | `jira/user-email`  | On **User** entities: overrides the email used to find the user's Jira account for the "Assigned to me" filter. |
 
 ## Configuration

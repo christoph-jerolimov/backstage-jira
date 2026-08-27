@@ -45,6 +45,8 @@ describe('JiraOverviewCard', () => {
     expect(screen.getByText('In Progress')).toBeInTheDocument();
     expect(screen.getByText('130')).toBeInTheDocument();
     expect(screen.getByText('Done')).toBeInTheDocument();
+    expect(screen.getByText('147')).toBeInTheDocument();
+    expect(screen.getByText('Total')).toBeInTheDocument();
     expect(jiraApi.getStatusCounts).toHaveBeenCalledWith({
       entityRef: 'component:default/my-service',
     });

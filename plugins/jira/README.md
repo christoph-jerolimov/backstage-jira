@@ -16,6 +16,13 @@ metadata:
     # jira/board-id: "42" # optional: adds a Sprint view (Jira Software board id)
 ```
 
+The tab's view state — filter, sort column and direction, search text,
+page, and the Issues/Sprint selection — is reflected in the page URL, so
+any view can be shared, bookmarked, or survives a reload; the URL stays
+clean in the default state, and invalid parameter values simply fall back
+to the defaults. A header line links the entity's Jira projects, and the
+Overview card shows a Total next to the three category counts.
+
 Clicking an issue row opens an in-page detail dialog — description, labels,
 reporter, and the most recent comments, all rendered as plain text — with an
 "Open in Jira" link; the issue-key link in the row still goes straight to

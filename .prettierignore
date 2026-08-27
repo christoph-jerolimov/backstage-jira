@@ -1,4 +1,6 @@
+# Build output
 dist
 dist-types
 coverage
-.vscode
+# Tool-managed content: scaffolded and rewritten by the openspec CLI
+openspec

@@ -24,7 +24,7 @@ credentials required)
     (Jira's word-based "contains" matching, not a strict substring match);
     the text is escaped and can never extend the query.
 - Responds with `{ issues, total, startAt, pageSize, filters,
-  appliedFilter, project, projects }` (`project` is the first annotated
+appliedFilter, project, projects }` (`project` is the first annotated
   project, kept for compatibility).
 - Errors: `400` invalid entityRef/filter/sort/pagination values, `401`
   unauthenticated, `404` unknown entity or missing annotation, `500`
@@ -62,13 +62,13 @@ credentials required)
 
 ## Entity annotations
 
-| Annotation         | Meaning                                                        |
-| ------------------ | -------------------------------------------------------------- |
+| Annotation         | Meaning                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `jira/project-key` | Jira project key, or a comma-separated list (`PROJ1,PROJ2`) queried together; required for the Jira tab to appear. |
-| `jira/component`   | Optional Jira component to narrow issues.                      |
-| `jira/instance`    | Optional connection host when several Jira hosts are configured. |
-| `jira/board-id`    | Optional numeric Jira board id; enables the Sprint view in the Jira tab. |
-| `jira/user-email`  | On **User** entities: overrides the email used to find the user's Jira account for the "Assigned to me" filter. |
+| `jira/component`   | Optional Jira component to narrow issues.                                                                          |
+| `jira/instance`    | Optional connection host when several Jira hosts are configured.                                                   |
+| `jira/board-id`    | Optional numeric Jira board id; enables the Sprint view in the Jira tab.                                           |
+| `jira/user-email`  | On **User** entities: overrides the email used to find the user's Jira account for the "Assigned to me" filter.    |
 
 ## Configuration
 

@@ -64,9 +64,9 @@ describe('buildJql', () => {
   });
 
   it('escapes hostile annotation values instead of letting them extend the query', () => {
-    expect(
-      buildJql({ projectKeys: ['X" OR project != "'] }),
-    ).toBe('project = "X\\" OR project != \\"" ORDER BY updated DESC');
+    expect(buildJql({ projectKeys: ['X" OR project != "'] })).toBe(
+      'project = "X\\" OR project != \\"" ORDER BY updated DESC',
+    );
   });
 
   it.each([
@@ -141,15 +141,21 @@ describe('JiraClient', () => {
       `Basic ${Buffer.from('bot@example.com:s3cret').toString('base64')}`,
     );
     expect(JSON.parse(init.body)).toEqual(
-      expect.objectContaining({ jql: 'project = "PROJ"', startAt: 0, maxResults: 50 }),
+      expect.objectContaining({
+        jql: 'project = "PROJ"',
+        startAt: 0,
+        maxResults: 50,
+      }),
     );
   });
 
   describe('findUser', () => {
     it('resolves a Cloud account via the query parameter', async () => {
-      const fetchMock = jest.fn().mockResolvedValue(
-        jsonResponse([{ accountId: 'abc-123', displayName: 'Dana' }]),
-      );
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          jsonResponse([{ accountId: 'abc-123', displayName: 'Dana' }]),
+        );
       const account = await clientWith(fetchMock).findUser({
         connection: basicConnection,
         email: 'dana@example.com',
@@ -203,7 +209,9 @@ describe('JiraClient', () => {
     it('maps server errors and network failures to JiraApiError', async () => {
       const errorFetch = jest
         .fn()
-        .mockResolvedValue(new Response('boom', { status: 500, statusText: 'Oops' }));
+        .mockResolvedValue(
+          new Response('boom', { status: 500, statusText: 'Oops' }),
+        );
       await expect(
         clientWith(errorFetch).findUser({
           connection: basicConnection,
@@ -211,7 +219,9 @@ describe('JiraClient', () => {
         }),
       ).rejects.toThrow(/responded with 500/);
 
-      const networkFetch = jest.fn().mockRejectedValue(new Error('socket hang up'));
+      const networkFetch = jest
+        .fn()
+        .mockRejectedValue(new Error('socket hang up'));
       await expect(
         clientWith(networkFetch).findUser({
           connection: basicConnection,
@@ -247,7 +257,9 @@ describe('JiraClient', () => {
     };
 
     it('maps detail fields and caps comments to the newest five, newest first', async () => {
-      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(detailResponse));
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(jsonResponse(detailResponse));
       const detail = await clientWith(fetchMock).getIssue({
         connection: basicConnection,
         issueKey: 'PROJ-7',
@@ -290,7 +302,9 @@ describe('JiraClient', () => {
     it('maps other failures to JiraApiError', async () => {
       const fetchMock = jest
         .fn()
-        .mockResolvedValue(new Response('boom', { status: 500, statusText: 'Oops' }));
+        .mockResolvedValue(
+          new Response('boom', { status: 500, statusText: 'Oops' }),
+        );
       await expect(
         clientWith(fetchMock).getIssue({
           connection: basicConnection,
@@ -334,7 +348,9 @@ describe('JiraClient', () => {
     });
 
     it('returns undefined when the board has no active sprint', async () => {
-      const fetchMock = jest.fn().mockResolvedValue(jsonResponse({ values: [] }));
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ values: [] }));
       await expect(
         clientWith(fetchMock).getActiveSprint({
           connection: basicConnection,
@@ -348,7 +364,10 @@ describe('JiraClient', () => {
         jsonResponse({
           total: 1,
           issues: [
-            { key: 'PROJ-8', fields: { summary: 'Sprint task', assignee: null } },
+            {
+              key: 'PROJ-8',
+              fields: { summary: 'Sprint task', assignee: null },
+            },
           ],
         }),
       );
@@ -371,9 +390,9 @@ describe('JiraClient', () => {
   });
 
   it('counts issues with maxResults 0 without fetching any', async () => {
-    const fetchMock = jest.fn().mockResolvedValue(
-      jsonResponse({ total: 137, issues: [] }),
-    );
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ total: 137, issues: [] }));
     const count = await clientWith(fetchMock).countIssues({
       connection: basicConnection,
       jql: 'project = "PROJ" AND statusCategory = "Done"',
@@ -385,9 +404,9 @@ describe('JiraClient', () => {
   });
 
   it('passes paging options through and reports them back, capping the page size', async () => {
-    const fetchMock = jest.fn().mockResolvedValue(
-      jsonResponse({ total: 120, issues: [] }),
-    );
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ total: 120, issues: [] }));
     const result = await clientWith(fetchMock).searchIssues({
       connection: basicConnection,
       jql: 'project = "PROJ"',
@@ -425,7 +444,10 @@ describe('JiraClient', () => {
               created: '2026-08-01T10:00:00.000+0000',
               updated: '2026-08-20T10:00:00.000+0000',
               issuetype: { name: 'Bug', iconUrl: 'https://x/bug.svg' },
-              status: { name: 'In Progress', statusCategory: { name: 'In Progress' } },
+              status: {
+                name: 'In Progress',
+                statusCategory: { name: 'In Progress' },
+              },
               priority: { name: 'High', iconUrl: 'https://x/high.svg' },
               assignee: { displayName: 'Dana' },
             },
@@ -455,7 +477,9 @@ describe('JiraClient', () => {
     const fetchMock = jest.fn().mockResolvedValue(
       jsonResponse({
         total: 1,
-        issues: [{ key: 'PROJ-8', fields: { summary: 'Orphan', assignee: null } }],
+        issues: [
+          { key: 'PROJ-8', fields: { summary: 'Orphan', assignee: null } },
+        ],
       }),
     );
     const result = await clientWith(fetchMock).searchIssues({
@@ -463,13 +487,18 @@ describe('JiraClient', () => {
       jql: 'project = "PROJ"',
     });
     expect(result.issues[0].assignee).toBeUndefined();
-    expect(result.issues[0].status).toEqual({ name: undefined, category: undefined });
+    expect(result.issues[0].status).toEqual({
+      name: undefined,
+      category: undefined,
+    });
   });
 
   it('maps non-2xx responses to JiraApiError without credentials', async () => {
     const fetchMock = jest
       .fn()
-      .mockResolvedValue(new Response('nope', { status: 401, statusText: 'Unauthorized' }));
+      .mockResolvedValue(
+        new Response('nope', { status: 401, statusText: 'Unauthorized' }),
+      );
     await expect(
       clientWith(fetchMock).searchIssues({
         connection: basicConnection,

@@ -154,16 +154,16 @@ export class JiraConnectionsReader {
     if (this.connections.length > 1) {
       throw new InputError(
         'Multiple connections of type "jira" are configured; select one by ' +
-          `adding a "jira/instance" annotation with one of: ${this.hosts().join(', ')}`,
+          `adding a "jira/instance" annotation with one of: ${this.hosts().join(
+            ', ',
+          )}`,
       );
     }
     return this.connections[0];
   }
 }
 
-function stripTitle(
-  auth: z.infer<typeof authSchema>,
-): JiraConnection['auth'] {
+function stripTitle(auth: z.infer<typeof authSchema>): JiraConnection['auth'] {
   if (auth.method === 'basic') {
     return { method: 'basic', email: auth.email, apiToken: auth.apiToken };
   }

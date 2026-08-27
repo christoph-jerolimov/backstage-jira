@@ -1,6 +1,9 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
+import {
+  renderInTestApp,
+  TestApiProvider,
+} from '@backstage/frontend-test-utils';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { Entity } from '@backstage/catalog-model';
 import { JiraContent } from './JiraContent';
@@ -42,12 +45,19 @@ const detail: JiraIssueDetail = {
   labels: ['hardware'],
   reporter: { displayName: 'Rae' },
   comments: [
-    { author: 'Rae', created: '2026-08-19T10:00:00.000Z', body: 'Any <i>news</i>?' },
+    {
+      author: 'Rae',
+      created: '2026-08-19T10:00:00.000Z',
+      body: 'Any <i>news</i>?',
+    },
   ],
   commentTotal: 9,
 };
 
-async function renderContent(jiraApi: Partial<JiraApi>, annotations?: Record<string, string>) {
+async function renderContent(
+  jiraApi: Partial<JiraApi>,
+  annotations?: Record<string, string>,
+) {
   return renderInTestApp(
     <TestApiProvider apis={[[jiraApiRef, jiraApi]]}>
       <EntityProvider
@@ -87,7 +97,9 @@ describe('issue detail dialog', () => {
 
     await userEvent.keyboard('{Escape}');
     await waitFor(() =>
-      expect(screen.queryByText('It <b>broke</b> badly')).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText('It <b>broke</b> badly'),
+      ).not.toBeInTheDocument(),
     );
   });
 
@@ -140,7 +152,9 @@ describe('sprint view', () => {
     await waitFor(() =>
       expect(screen.getByText('Something is broken')).toBeInTheDocument(),
     );
-    expect(screen.queryByRole('radio', { name: 'Sprint' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: 'Sprint' }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('Sprint 12')).not.toBeInTheDocument();
   });
 
@@ -159,7 +173,9 @@ describe('sprint view', () => {
     const issuesCalls = jiraApi.getIssues.mock.calls.length;
 
     await userEvent.click(screen.getByRole('radio', { name: 'Sprint' }));
-    await waitFor(() => expect(screen.getByText('Sprint 12')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Sprint 12')).toBeInTheDocument(),
+    );
     expect(screen.getByText('Ship it')).toBeInTheDocument();
     expect(screen.getByText('Sprint task')).toBeInTheDocument();
     expect(jiraApi.getSprint).toHaveBeenCalledWith({

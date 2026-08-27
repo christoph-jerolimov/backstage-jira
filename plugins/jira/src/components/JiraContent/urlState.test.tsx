@@ -1,7 +1,10 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLocation } from 'react-router-dom';
-import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
+import {
+  renderInTestApp,
+  TestApiProvider,
+} from '@backstage/frontend-test-utils';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { Entity } from '@backstage/catalog-model';
 import { JiraContent } from './JiraContent';
@@ -117,10 +120,14 @@ describe('URL query state', () => {
 
     const select = screen.getByRole('button', { name: /filter/i });
     await userEvent.click(select);
-    await userEvent.click(await screen.findByRole('option', { name: 'All issues' }));
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'All issues' }),
+    );
     await waitFor(() => expect(currentSearch()).toBe('?filter=all'));
 
-    await userEvent.click(screen.getByRole('columnheader', { name: /Priority/ }));
+    await userEvent.click(
+      screen.getByRole('columnheader', { name: /Priority/ }),
+    );
     await waitFor(() =>
       expect(currentSearch()).toBe('?filter=all&sortBy=priority&order=asc'),
     );
@@ -144,7 +151,9 @@ describe('URL query state', () => {
       annotations: { 'jira/project-key': 'PROJ', 'jira/board-id': '7' },
       url: '/?view=sprint',
     });
-    await waitFor(() => expect(screen.getByText('Sprint 12')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Sprint 12')).toBeInTheDocument(),
+    );
   });
 
   it('ignores view=sprint without a board annotation', async () => {

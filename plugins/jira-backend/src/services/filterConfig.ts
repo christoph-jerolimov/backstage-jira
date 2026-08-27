@@ -79,7 +79,10 @@ export function readFilterConfig(config: RootConfigService): JiraFilterConfig {
   }
 
   const resolvedDefault = defaultFilterId ?? filters[0].id;
-  if (resolvedDefault !== ASSIGNED_TO_ME_FILTER_ID && !seen.has(resolvedDefault)) {
+  if (
+    resolvedDefault !== ASSIGNED_TO_ME_FILTER_ID &&
+    !seen.has(resolvedDefault)
+  ) {
     throw new InputError(
       `jira.defaultFilter is "${resolvedDefault}" but no filter with that id ` +
         `exists; known filter ids: ${[...seen].join(', ')}`,

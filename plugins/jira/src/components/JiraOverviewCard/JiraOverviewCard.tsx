@@ -39,12 +39,7 @@ export const JiraOverviewCard = () => {
         {!loading && !error && value && (
           <Flex justify="between" gap="4">
             {value.categories.map(category => (
-              <Flex
-                key={category.id}
-                direction="column"
-                align="center"
-                gap="1"
-              >
+              <Flex key={category.id} direction="column" align="center" gap="1">
                 <Text variant="title-medium" weight="bold">
                   {category.count}
                 </Text>

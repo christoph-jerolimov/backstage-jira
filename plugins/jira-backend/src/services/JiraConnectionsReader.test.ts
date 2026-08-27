@@ -15,7 +15,9 @@ describe('JiraConnectionsReader', () => {
       {
         type: 'jira',
         host: 'example.atlassian.net',
-        auth: [{ method: 'basic', email: 'bot@example.com', apiToken: 's3cret' }],
+        auth: [
+          { method: 'basic', email: 'bot@example.com', apiToken: 's3cret' },
+        ],
       },
     ]);
     expect(reader.find()).toEqual({
@@ -114,16 +116,32 @@ describe('JiraConnectionsReader', () => {
   it('rejects duplicate hosts', () => {
     expect(() =>
       readerFor([
-        { type: 'jira', host: 'a.example.com', auth: [{ method: 'token', token: 't' }] },
-        { type: 'jira', host: 'a.example.com', auth: [{ method: 'token', token: 't' }] },
+        {
+          type: 'jira',
+          host: 'a.example.com',
+          auth: [{ method: 'token', token: 't' }],
+        },
+        {
+          type: 'jira',
+          host: 'a.example.com',
+          auth: [{ method: 'token', token: 't' }],
+        },
       ]),
     ).toThrow(/Duplicate connection/);
   });
 
   describe('multi-host resolution', () => {
     const two = [
-      { type: 'jira', host: 'a.example.com', auth: [{ method: 'token', token: 'ta' }] },
-      { type: 'jira', host: 'b.example.com', auth: [{ method: 'token', token: 'tb' }] },
+      {
+        type: 'jira',
+        host: 'a.example.com',
+        auth: [{ method: 'token', token: 'ta' }],
+      },
+      {
+        type: 'jira',
+        host: 'b.example.com',
+        auth: [{ method: 'token', token: 'tb' }],
+      },
     ];
 
     it('selects by host', () => {

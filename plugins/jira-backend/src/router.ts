@@ -1,7 +1,4 @@
-import {
-  HttpAuthService,
-  LoggerService,
-} from '@backstage/backend-plugin-api';
+import { HttpAuthService, LoggerService } from '@backstage/backend-plugin-api';
 import { InputError, NotFoundError } from '@backstage/errors';
 import { CatalogService } from '@backstage/plugin-catalog-node';
 import { parseEntityRef } from '@backstage/catalog-model';
@@ -207,12 +204,18 @@ export async function createRouter({
       !SORT_FIELDS.includes(sortByParam as SortField)
     ) {
       throw new InputError(
-        `Unknown sort field "${sortByParam}"; allowed fields: ${SORT_FIELDS.join(', ')}`,
+        `Unknown sort field "${sortByParam}"; allowed fields: ${SORT_FIELDS.join(
+          ', ',
+        )}`,
       );
     }
     const sortBy = (sortByParam as SortField | undefined) ?? 'updated';
     const orderParam = singleParam(req.query.order, 'order');
-    if (orderParam !== undefined && orderParam !== 'asc' && orderParam !== 'desc') {
+    if (
+      orderParam !== undefined &&
+      orderParam !== 'asc' &&
+      orderParam !== 'desc'
+    ) {
       throw new InputError(
         `Invalid order "${orderParam}"; allowed values: asc, desc`,
       );

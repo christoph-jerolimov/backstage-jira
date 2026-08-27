@@ -1,6 +1,9 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
+import {
+  renderInTestApp,
+  TestApiProvider,
+} from '@backstage/frontend-test-utils';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { Entity } from '@backstage/catalog-model';
 import { JiraContent } from './JiraContent';
@@ -34,7 +37,9 @@ const issue = {
   updated: '2026-08-20T10:00:00.000Z',
 };
 
-function respondWith(overrides: Partial<JiraIssuesResponse>): JiraIssuesResponse {
+function respondWith(
+  overrides: Partial<JiraIssuesResponse>,
+): JiraIssuesResponse {
   return {
     issues: [issue],
     total: 1,
@@ -114,7 +119,9 @@ describe('JiraContent', () => {
     expect(select).toHaveTextContent('Unresolved');
 
     await userEvent.click(select);
-    await userEvent.click(await screen.findByRole('option', { name: 'All issues' }));
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'All issues' }),
+    );
 
     await waitFor(() =>
       expect(jiraApi.getIssues).toHaveBeenLastCalledWith(
@@ -130,14 +137,22 @@ describe('JiraContent', () => {
       expect(screen.getByText('Something is broken')).toBeInTheDocument(),
     );
 
-    await userEvent.click(screen.getByRole('columnheader', { name: /Priority/ }));
+    await userEvent.click(
+      screen.getByRole('columnheader', { name: /Priority/ }),
+    );
     await waitFor(() =>
       expect(jiraApi.getIssues).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sortBy: 'priority', order: 'asc', startAt: 0 }),
+        expect.objectContaining({
+          sortBy: 'priority',
+          order: 'asc',
+          startAt: 0,
+        }),
       ),
     );
 
-    await userEvent.click(screen.getByRole('columnheader', { name: /Priority/ }));
+    await userEvent.click(
+      screen.getByRole('columnheader', { name: /Priority/ }),
+    );
     await waitFor(() =>
       expect(jiraApi.getIssues).toHaveBeenLastCalledWith(
         expect.objectContaining({ sortBy: 'priority', order: 'desc' }),
@@ -149,7 +164,9 @@ describe('JiraContent', () => {
     const jiraApi = {
       getIssues: jest
         .fn()
-        .mockResolvedValue(respondWith({ total: 120, startAt: 0, pageSize: 50 })),
+        .mockResolvedValue(
+          respondWith({ total: 120, startAt: 0, pageSize: 50 }),
+        ),
     };
     await renderContent(jiraApi);
     await waitFor(() =>
@@ -170,7 +187,9 @@ describe('JiraContent', () => {
 
     const select = screen.getByRole('button', { name: /filter/i });
     await userEvent.click(select);
-    await userEvent.click(await screen.findByRole('option', { name: 'All issues' }));
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'All issues' }),
+    );
     await waitFor(() =>
       expect(jiraApi.getIssues).toHaveBeenLastCalledWith(
         expect.objectContaining({ filter: 'all', startAt: 0 }),
@@ -225,7 +244,9 @@ describe('JiraContent', () => {
 
   it('shows an empty state when no issues match', async () => {
     const jiraApi = {
-      getIssues: jest.fn().mockResolvedValue(respondWith({ issues: [], total: 0 })),
+      getIssues: jest
+        .fn()
+        .mockResolvedValue(respondWith({ issues: [], total: 0 })),
     };
     await renderContent(jiraApi);
     await waitFor(() =>

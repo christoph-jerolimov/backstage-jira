@@ -11,7 +11,11 @@ describe('readFilterConfig', () => {
   it('falls back to built-in unresolved/all with unresolved as default', () => {
     expect(readFilterConfig(configFor())).toEqual({
       filters: [
-        { id: 'unresolved', name: 'Unresolved', jql: 'resolution = Unresolved' },
+        {
+          id: 'unresolved',
+          name: 'Unresolved',
+          jql: 'resolution = Unresolved',
+        },
         { id: 'all', name: 'All issues', jql: '' },
       ],
       defaultFilterId: 'unresolved',
@@ -19,15 +23,15 @@ describe('readFilterConfig', () => {
   });
 
   it('allows selecting a built-in default without configured filters', () => {
-    expect(readFilterConfig(configFor({ defaultFilter: 'all' })).defaultFilterId).toBe(
-      'all',
-    );
+    expect(
+      readFilterConfig(configFor({ defaultFilter: 'all' })).defaultFilterId,
+    ).toBe('all');
   });
 
   it('rejects an unknown default without configured filters', () => {
-    expect(() => readFilterConfig(configFor({ defaultFilter: 'nope' }))).toThrow(
-      /"nope".*unresolved, all/s,
-    );
+    expect(() =>
+      readFilterConfig(configFor({ defaultFilter: 'nope' })),
+    ).toThrow(/"nope".*unresolved, all/s);
   });
 
   it('uses configured filters in order', () => {
@@ -35,7 +39,11 @@ describe('readFilterConfig', () => {
       configFor({
         filters: [
           { id: 'mine', name: 'Mine', jql: 'assignee = currentUser()' },
-          { id: 'unresolved', name: 'Unresolved', jql: 'resolution = Unresolved' },
+          {
+            id: 'unresolved',
+            name: 'Unresolved',
+            jql: 'resolution = Unresolved',
+          },
         ],
       }),
     );
@@ -49,7 +57,11 @@ describe('readFilterConfig', () => {
         defaultFilter: 'unresolved',
         filters: [
           { id: 'mine', name: 'Mine', jql: 'assignee = currentUser()' },
-          { id: 'unresolved', name: 'Unresolved', jql: 'resolution = Unresolved' },
+          {
+            id: 'unresolved',
+            name: 'Unresolved',
+            jql: 'resolution = Unresolved',
+          },
         ],
       }),
     );

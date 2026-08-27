@@ -29,10 +29,10 @@ describe('JiraClient', () => {
       entityRef: 'component:default/my-service',
       filter: 'all',
     });
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('&filter=all'),
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('&filter=all'));
+    expect(fetch.mock.calls[0][0]).not.toMatch(
+      /startAt|limit|sortBy|order|search/,
     );
-    expect(fetch.mock.calls[0][0]).not.toMatch(/startAt|limit|sortBy|order|search/);
   });
 
   it('adds paging, sorting, and search parameters only when set', async () => {

@@ -19,7 +19,11 @@ const userEntity = (options?: {
 }) => ({
   apiVersion: 'backstage.io/v1alpha1',
   kind: 'User',
-  metadata: { name: 'mock', namespace: 'default', annotations: options?.annotations },
+  metadata: {
+    name: 'mock',
+    namespace: 'default',
+    annotations: options?.annotations,
+  },
   spec: options?.email ? { profile: { email: options.email } } : {},
 });
 

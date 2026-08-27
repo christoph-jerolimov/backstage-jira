@@ -63,6 +63,8 @@ export const issueColumnConfig: readonly ColumnConfig<IssueRow>[] = [
   },
 ];
 
-export function toIssueRows(issues: JiraIssue[] | undefined): IssueRow[] | undefined {
+export function toIssueRows(
+  issues: JiraIssue[] | undefined,
+): IssueRow[] | undefined {
   return issues?.map(issue => ({ ...issue, id: issue.key }));
 }

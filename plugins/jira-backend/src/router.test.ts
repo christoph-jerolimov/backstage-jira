@@ -101,14 +101,19 @@ async function setupApp(options?: {
   const jiraUsers = options?.jiraUsers ?? [{ accountId: 'abc-123' }];
   const fetchMock =
     options?.fetchImpl ??
-    jest.fn().mockImplementation(async (url: string) =>
-      new Response(
-        JSON.stringify(
-          url.includes('/rest/api/2/user/search') ? jiraUsers : searchResponse,
-        ),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+    jest
+      .fn()
+      .mockImplementation(
+        async (url: string) =>
+          new Response(
+            JSON.stringify(
+              url.includes('/rest/api/2/user/search')
+                ? jiraUsers
+                : searchResponse,
+            ),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+      );
   const config = mockServices.rootConfig({
     data: {
       connections: options?.connections ?? [
@@ -379,18 +384,21 @@ describe('createRouter', () => {
 
   it('returns 502 when Jira rejects the request, without leaking secrets', async () => {
     const { app, logger } = await setupApp({
-      fetchImpl: jest
-        .fn()
-        .mockResolvedValue(
-          new Response(`denied for ${SECRET}`, { status: 403, statusText: 'Forbidden' }),
-        ),
+      fetchImpl: jest.fn().mockResolvedValue(
+        new Response(`denied for ${SECRET}`, {
+          status: 403,
+          statusText: 'Forbidden',
+        }),
+      ),
     });
     const response = await request(app).get(
       '/v1/issues?entityRef=component:default/annotated',
     );
     expect(response.status).toBe(502);
     expect(JSON.stringify(response.body)).not.toContain(SECRET);
-    const loggedLines = (logger.warn as jest.Mock).mock.calls.flat().map(String);
+    const loggedLines = (logger.warn as jest.Mock).mock.calls
+      .flat()
+      .map(String);
     expect(loggedLines.length).toBeGreaterThan(0);
     expect(loggedLines.join('\n')).not.toContain(SECRET);
   });
@@ -403,19 +411,21 @@ describe('createRouter', () => {
         description: 'Details here',
         labels: ['x'],
         reporter: { displayName: 'Rae' },
-        comment: { total: 1, comments: [{ author: { displayName: 'A' }, body: 'Hi' }] },
+        comment: {
+          total: 1,
+          comments: [{ author: { displayName: 'A' }, body: 'Hi' }],
+        },
       },
     };
 
     function detailFetch(response: unknown = detailResponse, status = 200) {
-      return jest
-        .fn()
-        .mockImplementation(async () =>
+      return jest.fn().mockImplementation(
+        async () =>
           new Response(JSON.stringify(response), {
             status,
             headers: { 'Content-Type': 'application/json' },
           }),
-        );
+      );
     }
 
     it('returns the issue detail for a key of the entity project', async () => {
@@ -514,7 +524,12 @@ describe('createRouter', () => {
             ? { values: [] }
             : {
                 values: [
-                  { id: 42, name: 'Sprint 12', state: 'active', goal: 'Ship it' },
+                  {
+                    id: 42,
+                    name: 'Sprint 12',
+                    state: 'active',
+                    goal: 'Ship it',
+                  },
                 ],
               };
         } else if (url.includes('/sprint/42/issue')) {
@@ -579,7 +594,9 @@ describe('createRouter', () => {
         '/v1/sprint?entityRef=component:default/bad-board',
       );
       expect(response.status).toBe(404);
-      expect(response.body.error.message).toMatch(/"seven" is not a positive integer/);
+      expect(response.body.error.message).toMatch(
+        /"seven" is not a positive integer/,
+      );
     });
   });
 
@@ -621,9 +638,9 @@ describe('createRouter', () => {
         'project = "PROJ" AND statusCategory = "In Progress" ORDER BY updated DESC',
         'project = "PROJ" AND statusCategory = "Done" ORDER BY updated DESC',
       ]);
-      expect(jqls.every((b: { maxResults: number }) => b.maxResults === 0)).toBe(
-        true,
-      );
+      expect(
+        jqls.every((b: { maxResults: number }) => b.maxResults === 0),
+      ).toBe(true);
     });
 
     it('scopes counts to all annotated projects and the component', async () => {
@@ -783,7 +800,11 @@ describe('createRouter', () => {
       jira: {
         defaultFilter: 'recent',
         filters: [
-          { id: 'unresolved', name: 'Unresolved', jql: 'resolution = Unresolved' },
+          {
+            id: 'unresolved',
+            name: 'Unresolved',
+            jql: 'resolution = Unresolved',
+          },
           { id: 'recent', name: 'Recent', jql: 'updated >= -7d' },
         ],
       },

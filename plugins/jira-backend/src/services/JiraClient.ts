@@ -167,7 +167,6 @@ const REQUESTED_FIELDS = [
   'updated',
 ];
 
-
 /**
  * Minimal Jira REST client for issue search, working against both Jira
  * Cloud and Data Center via the v2 search API.
@@ -207,9 +206,7 @@ export class JiraClient {
       if (users === undefined) {
         continue;
       }
-      const account = users.find(
-        user => user.accountId ?? user.name,
-      );
+      const account = users.find(user => user.accountId ?? user.name);
       if (account) {
         return account.accountId ?? account.name ?? undefined;
       }
@@ -223,9 +220,13 @@ export class JiraClient {
     connection: JiraConnection,
     param: 'query' | 'username',
     email: string,
-  ): Promise<Array<{ accountId?: string | null; name?: string | null }> | undefined> {
+  ): Promise<
+    Array<{ accountId?: string | null; name?: string | null }> | undefined
+  > {
     const fetchImpl = this.options.fetchImpl ?? fetch;
-    const url = `${connection.apiBaseUrl}/rest/api/2/user/search?${param}=${encodeURIComponent(email)}`;
+    const url = `${
+      connection.apiBaseUrl
+    }/rest/api/2/user/search?${param}=${encodeURIComponent(email)}`;
     let response: Response;
     try {
       response = await fetchImpl(url, {
@@ -280,7 +281,10 @@ export class JiraClient {
   }> {
     const { connection, jql } = options;
     const startAt = options.startAt ?? 0;
-    const maxResults = Math.min(options.maxResults ?? MAX_PAGE_SIZE, MAX_PAGE_SIZE);
+    const maxResults = Math.min(
+      options.maxResults ?? MAX_PAGE_SIZE,
+      MAX_PAGE_SIZE,
+    );
     const fetchImpl = this.options.fetchImpl ?? fetch;
     const url = `${connection.apiBaseUrl}/rest/api/2/search`;
     this.options.logger.debug(`Searching Jira at ${url}`, { jql });
@@ -338,7 +342,13 @@ export class JiraClient {
     issueKey: string;
   }): Promise<JiraIssueDetail | undefined> {
     const { connection, issueKey } = options;
-    const fields = [...REQUESTED_FIELDS, 'description', 'labels', 'reporter', 'comment'];
+    const fields = [
+      ...REQUESTED_FIELDS,
+      'description',
+      'labels',
+      'reporter',
+      'comment',
+    ];
     const url =
       `${connection.apiBaseUrl}/rest/api/2/issue/` +
       `${encodeURIComponent(issueKey)}?fields=${fields.join(',')}`;

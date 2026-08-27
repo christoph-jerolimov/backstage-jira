@@ -19,7 +19,9 @@ describe('parseQueryState', () => {
 
   it('reads a full state', () => {
     expect(
-      parse('filter=all&sortBy=priority&order=asc&search=flux&startAt=50&view=sprint'),
+      parse(
+        'filter=all&sortBy=priority&order=asc&search=flux&startAt=50&view=sprint',
+      ),
     ).toEqual({
       query: {
         filterId: 'all',

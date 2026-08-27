@@ -41,6 +41,43 @@ export interface JiraIssue {
   updated?: string;
 }
 
+/** A comment on a Jira issue, body passed through as raw text. */
+export interface JiraComment {
+  author?: string;
+  created?: string;
+  body: string;
+}
+
+/** Full detail of a single issue as returned by `GET /v1/issues/:key`. */
+export interface JiraIssueDetail extends JiraIssue {
+  /** Raw description text, rendered literally. */
+  description: string;
+  labels: string[];
+  reporter?: { displayName: string };
+  /** Most recent comments, newest first, capped server-side. */
+  comments: JiraComment[];
+  /** Total number of comments on the issue. */
+  commentTotal: number;
+}
+
+/** An active sprint as returned by `GET /v1/sprint`. */
+export interface JiraSprint {
+  id: number;
+  name: string;
+  state: string;
+  startDate?: string;
+  endDate?: string;
+  goal?: string;
+}
+
+/** Response shape of `GET /v1/sprint`. */
+export interface JiraSprintResponse {
+  /** The board's active sprint, or null when there is none. */
+  sprint: JiraSprint | null;
+  issues: JiraIssue[];
+  total: number;
+}
+
 /** A filter as reported by the issues API. */
 export interface JiraFilterInfo {
   id: string;

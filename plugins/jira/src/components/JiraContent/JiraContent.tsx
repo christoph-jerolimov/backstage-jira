@@ -5,87 +5,29 @@ import { useEntity } from '@backstage/plugin-catalog-react';
 import { stringifyEntityRef } from '@backstage/catalog-model';
 import {
   Button,
-  Cell,
-  CellText,
   Flex,
-  Link,
   SearchField,
   Select,
   Table,
   Text,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@backstage/ui';
-import type { ColumnConfig, SortDescriptor } from '@backstage/ui';
+import type { SortDescriptor } from '@backstage/ui';
 import { jiraApiRef } from '../../api';
 import {
   JiraFilterInfo,
-  JiraIssue,
   SORT_FIELDS,
   SortField,
   SortOrder,
 } from '../../types';
-
-type IssueRow = JiraIssue & { id: string };
+import { issueColumnConfig, toIssueRows } from './issueColumns';
+import { IssueDetailDialog } from './IssueDetailDialog';
+import { SprintView } from './SprintView';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-const sortable = (id: string) =>
-  SORT_FIELDS.includes(id as SortField) ? { isSortable: true } : {};
-
-const columnConfig: readonly ColumnConfig<IssueRow>[] = [
-  {
-    id: 'key',
-    label: 'Key',
-    isRowHeader: true,
-    ...sortable('key'),
-    cell: issue => (
-      <Cell>
-        <Link href={issue.url} target="_blank" rel="noopener">
-          {issue.key}
-        </Link>
-      </Cell>
-    ),
-  },
-  {
-    id: 'summary',
-    label: 'Summary',
-    ...sortable('summary'),
-    cell: issue => <CellText title={issue.summary} />,
-  },
-  {
-    id: 'type',
-    label: 'Type',
-    cell: issue => <CellText title={issue.type.name ?? '—'} />,
-  },
-  {
-    id: 'status',
-    label: 'Status',
-    ...sortable('status'),
-    cell: issue => <CellText title={issue.status.name ?? '—'} />,
-  },
-  {
-    id: 'priority',
-    label: 'Priority',
-    ...sortable('priority'),
-    cell: issue => <CellText title={issue.priority.name ?? '—'} />,
-  },
-  {
-    id: 'assignee',
-    label: 'Assignee',
-    cell: issue => (
-      <CellText title={issue.assignee?.displayName ?? 'Unassigned'} />
-    ),
-  },
-  {
-    id: 'updated',
-    label: 'Updated',
-    ...sortable('updated'),
-    cell: issue => (
-      <CellText
-        title={issue.updated ? new Date(issue.updated).toLocaleString() : '—'}
-      />
-    ),
-  },
-];
+const JIRA_BOARD_ID_ANNOTATION = 'jira/board-id';
 
 interface IssueQuery {
   filterId?: string;
@@ -95,10 +37,12 @@ interface IssueQuery {
   startAt: number;
 }
 
-export const JiraContent = () => {
-  const { entity } = useEntity();
+const IssuesView = (props: {
+  entityRef: string;
+  onIssueClick: (issueKey: string) => void;
+}) => {
+  const { entityRef, onIssueClick } = props;
   const jiraApi = useApi(jiraApiRef);
-  const entityRef = stringifyEntityRef(entity);
 
   // filterId/sortBy/order stay undefined until the user picks them, letting
   // the backend apply its defaults. Any non-paging change resets startAt.
@@ -179,14 +123,11 @@ export const JiraContent = () => {
     }));
   }, [pageSize]);
 
-  const rows: IssueRow[] | undefined = value?.issues.map(issue => ({
-    ...issue,
-    id: issue.key,
-  }));
+  const rows = toIssueRows(value?.issues);
 
   if (error && !loading) {
     return (
-      <Flex direction="column" align="start" gap="4" p="4">
+      <Flex direction="column" align="start" gap="4">
         <Text>Failed to load Jira issues: {error.message}</Text>
         <Button onPress={retry}>Retry</Button>
       </Flex>
@@ -194,7 +135,7 @@ export const JiraContent = () => {
   }
 
   return (
-    <Flex direction="column" gap="4" p="4">
+    <Flex direction="column" gap="4">
       <Flex align="end" gap="2">
         {filterOptions.length > 0 && (
           <div style={{ minWidth: 220 }}>
@@ -218,12 +159,13 @@ export const JiraContent = () => {
           />
         </div>
       </Flex>
-      <Table<IssueRow>
-        columnConfig={columnConfig}
+      <Table
+        columnConfig={issueColumnConfig}
         data={rows}
         isPending={loading && !rows}
         isStale={loading && !!rows}
         sort={{ descriptor: sortDescriptor, onSortChange }}
+        rowConfig={{ onClick: row => onIssueClick(row.key) }}
         pagination={{
           type: 'page',
           pageSize,
@@ -242,6 +184,52 @@ export const JiraContent = () => {
               : 'No issues match the current filter.'}
           </Text>
         }
+      />
+    </Flex>
+  );
+};
+
+export const JiraContent = () => {
+  const { entity } = useEntity();
+  const entityRef = stringifyEntityRef(entity);
+  const hasBoard = Boolean(
+    entity.metadata.annotations?.[JIRA_BOARD_ID_ANNOTATION],
+  );
+
+  const [view, setView] = useState<'issues' | 'sprint'>('issues');
+  const [detailKey, setDetailKey] = useState<string | undefined>(undefined);
+
+  return (
+    <Flex direction="column" gap="4" p="4">
+      {hasBoard && (
+        <ToggleButtonGroup
+          aria-label="View"
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={[view]}
+          onSelectionChange={keys => {
+            const next = [...keys][0];
+            if (next === 'issues' || next === 'sprint') {
+              setView(next);
+            }
+          }}
+        >
+          <ToggleButton id="issues">Issues</ToggleButton>
+          <ToggleButton id="sprint">Sprint</ToggleButton>
+        </ToggleButtonGroup>
+      )}
+      {/* Both views stay mounted so the issues view keeps its query state
+          while the sprint view is shown. */}
+      <div style={{ display: view === 'issues' ? undefined : 'none' }}>
+        <IssuesView entityRef={entityRef} onIssueClick={setDetailKey} />
+      </div>
+      {hasBoard && view === 'sprint' && (
+        <SprintView entityRef={entityRef} onIssueClick={setDetailKey} />
+      )}
+      <IssueDetailDialog
+        entityRef={entityRef}
+        issueKey={detailKey}
+        onClose={() => setDetailKey(undefined)}
       />
     </Flex>
   );

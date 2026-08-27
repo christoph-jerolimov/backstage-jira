@@ -96,6 +96,7 @@ async function setupApp(options?: {
   fetchImpl?: jest.Mock;
   jiraUsers?: unknown[];
   userEntity?: object | null;
+  extraEntities?: object[];
 }) {
   const jiraUsers = options?.jiraUsers ?? [{ accountId: 'abc-123' }];
   const fetchMock =
@@ -131,6 +132,7 @@ async function setupApp(options?: {
       componentEntity,
       multiProjectEntity,
       bareEntity,
+      ...(options?.extraEntities ?? []),
       ...(userEntity ? [userEntity] : []),
     ] as any,
   });
@@ -391,6 +393,194 @@ describe('createRouter', () => {
     const loggedLines = (logger.warn as jest.Mock).mock.calls.flat().map(String);
     expect(loggedLines.length).toBeGreaterThan(0);
     expect(loggedLines.join('\n')).not.toContain(SECRET);
+  });
+
+  describe('/v1/issues/:issueKey', () => {
+    const detailResponse = {
+      key: 'PROJ-7',
+      fields: {
+        summary: 'Fix it',
+        description: 'Details here',
+        labels: ['x'],
+        reporter: { displayName: 'Rae' },
+        comment: { total: 1, comments: [{ author: { displayName: 'A' }, body: 'Hi' }] },
+      },
+    };
+
+    function detailFetch(response: unknown = detailResponse, status = 200) {
+      return jest
+        .fn()
+        .mockImplementation(async () =>
+          new Response(JSON.stringify(response), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+    }
+
+    it('returns the issue detail for a key of the entity project', async () => {
+      const { app, fetchMock } = await setupApp({ fetchImpl: detailFetch() });
+      const response = await request(app).get(
+        '/v1/issues/PROJ-7?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          key: 'PROJ-7',
+          description: 'Details here',
+          labels: ['x'],
+          reporter: { displayName: 'Rae' },
+          commentTotal: 1,
+        }),
+      );
+      expect(fetchMock.mock.calls[0][0]).toContain('/rest/api/2/issue/PROJ-7');
+    });
+
+    it('accepts a case-insensitive project prefix match', async () => {
+      const { app } = await setupApp({ fetchImpl: detailFetch() });
+      const response = await request(app).get(
+        '/v1/issues/proj-7?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(200);
+    });
+
+    it('rejects keys outside the entity projects without calling Jira', async () => {
+      const { app, fetchMock } = await setupApp({ fetchImpl: detailFetch() });
+      const response = await request(app).get(
+        '/v1/issues/OTHER-1?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/not part of this entity/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects malformed keys', async () => {
+      const { app } = await setupApp({ fetchImpl: detailFetch() });
+      const response = await request(app).get(
+        '/v1/issues/PROJ-7%20OR%201%3D1?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toMatch(/Invalid issue key/);
+    });
+
+    it('maps a Jira 404 to a 404', async () => {
+      const { app } = await setupApp({
+        fetchImpl: detailFetch('not found', 404),
+      });
+      const response = await request(app).get(
+        '/v1/issues/PROJ-999?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/not found in Jira/);
+    });
+
+    it('requires authentication', async () => {
+      const { app } = await setupApp({ fetchImpl: detailFetch() });
+      const response = await request(app)
+        .get('/v1/issues/PROJ-7?entityRef=component:default/annotated')
+        .set('Authorization', 'Bearer mock-none-token');
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe('/v1/sprint', () => {
+    const boardEntity = {
+      apiVersion: 'backstage.io/v1alpha1',
+      kind: 'Component',
+      metadata: {
+        name: 'with-board',
+        namespace: 'default',
+        annotations: {
+          'jira/project-key': 'PROJ',
+          'jira/board-id': '7',
+        },
+      },
+      spec: { type: 'service' },
+    };
+    const badBoardEntity = {
+      ...boardEntity,
+      metadata: {
+        ...boardEntity.metadata,
+        name: 'bad-board',
+        annotations: { 'jira/project-key': 'PROJ', 'jira/board-id': 'seven' },
+      },
+    };
+
+    function sprintFetch(options?: { noSprint?: boolean }) {
+      return jest.fn().mockImplementation(async (url: string) => {
+        let body: unknown;
+        if (url.includes('/board/7/sprint')) {
+          body = options?.noSprint
+            ? { values: [] }
+            : {
+                values: [
+                  { id: 42, name: 'Sprint 12', state: 'active', goal: 'Ship it' },
+                ],
+              };
+        } else if (url.includes('/sprint/42/issue')) {
+          body = {
+            total: 1,
+            issues: [{ key: 'PROJ-8', fields: { summary: 'Sprint task' } }],
+          };
+        } else {
+          body = searchResponse;
+        }
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+    }
+
+    async function sprintApp(options?: {
+      noSprint?: boolean;
+      entity?: object;
+    }) {
+      return setupApp({
+        extraEntities: [options?.entity ?? boardEntity],
+        fetchImpl: sprintFetch({ noSprint: options?.noSprint }),
+      });
+    }
+
+    it('returns the active sprint and its issues', async () => {
+      const { app } = await sprintApp();
+      const response = await request(app).get(
+        '/v1/sprint?entityRef=component:default/with-board',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        sprint: { id: 42, name: 'Sprint 12', state: 'active', goal: 'Ship it' },
+        issues: [expect.objectContaining({ key: 'PROJ-8' })],
+        total: 1,
+      });
+    });
+
+    it('returns a null sprint when the board has none active', async () => {
+      const { app } = await sprintApp({ noSprint: true });
+      const response = await request(app).get(
+        '/v1/sprint?entityRef=component:default/with-board',
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ sprint: null, issues: [], total: 0 });
+    });
+
+    it('returns 404 without a board annotation', async () => {
+      const { app } = await setupApp();
+      const response = await request(app).get(
+        '/v1/sprint?entityRef=component:default/annotated',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/jira\/board-id/);
+    });
+
+    it('returns 404 for a non-numeric board annotation', async () => {
+      const { app } = await sprintApp({ entity: badBoardEntity });
+      const response = await request(app).get(
+        '/v1/sprint?entityRef=component:default/bad-board',
+      );
+      expect(response.status).toBe(404);
+      expect(response.body.error.message).toMatch(/"seven" is not a positive integer/);
+    });
   });
 
   describe('/v1/status-counts', () => {

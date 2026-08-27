@@ -12,3 +12,6 @@ export const JIRA_INSTANCE_ANNOTATION = 'jira/instance';
  * the user's Jira account.
  */
 export const JIRA_USER_EMAIL_ANNOTATION = 'jira/user-email';
+
+/** Optional annotation naming the Jira board whose active sprint to show. */
+export const JIRA_BOARD_ID_ANNOTATION = 'jira/board-id';

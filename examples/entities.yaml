@@ -18,6 +18,7 @@ metadata:
     jira/project-key: PROJ
     # jira/component: backend
     # jira/instance: example.atlassian.net
+    # jira/board-id: "42" # enables the Sprint view (Jira Software board id)
 spec:
   type: website
   lifecycle: experimental

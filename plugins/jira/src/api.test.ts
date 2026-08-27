@@ -82,6 +82,33 @@ describe('JiraClient', () => {
     );
   });
 
+  it('requests issue detail with an encoded key', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+    const client = new JiraClient({ discoveryApi, fetchApi: { fetch } });
+    await client.getIssueDetail({
+      entityRef: 'component:default/my-service',
+      issueKey: 'PROJ-7',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/jira/v1/issues/PROJ-7?entityRef=component%3Adefault%2Fmy-service',
+    );
+  });
+
+  it('requests the sprint for an entity ref', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ sprint: null, issues: [], total: 0 }),
+    });
+    const client = new JiraClient({ discoveryApi, fetchApi: { fetch } });
+    await client.getSprint({ entityRef: 'component:default/my-service' });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/jira/v1/sprint?entityRef=component%3Adefault%2Fmy-service',
+    );
+  });
+
   it('throws a ResponseError on failure responses', async () => {
     const fetch = jest.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: { message: 'nope' } }), {

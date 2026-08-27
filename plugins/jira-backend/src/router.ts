@@ -8,6 +8,7 @@ import { parseEntityRef } from '@backstage/catalog-model';
 import express from 'express';
 import Router from 'express-promise-router';
 import {
+  JIRA_BOARD_ID_ANNOTATION,
   JIRA_COMPONENT_ANNOTATION,
   JIRA_INSTANCE_ANNOTATION,
   JIRA_PROJECT_KEY_ANNOTATION,
@@ -22,6 +23,7 @@ import {
 } from './services/filterConfig';
 import {
   JiraIssuesResponse,
+  JiraSprintResponse,
   JiraStatusCountsResponse,
   MAX_PAGE_SIZE,
   SORT_FIELDS,
@@ -61,7 +63,10 @@ interface JiraTarget {
   component?: string;
   connection: JiraConnection;
   credentials: Awaited<ReturnType<HttpAuthService['credentials']>>;
+  annotations: Record<string, string>;
 }
+
+const ISSUE_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 
 export async function createRouter({
   logger,
@@ -143,7 +148,7 @@ export async function createRouter({
       );
     }
 
-    return { projectKeys, component, connection, credentials };
+    return { projectKeys, component, connection, credentials, annotations };
   }
 
   // Runs a Jira call, mapping Jira-side failures to a 502 response. Returns
@@ -248,6 +253,75 @@ export async function createRouter({
       projects,
     };
     res.json(response);
+  });
+
+  router.get('/v1/issues/:issueKey', async (req, res) => {
+    const { projectKeys, connection } = await resolveTarget(req);
+
+    const issueKey = req.params.issueKey;
+    if (!ISSUE_KEY_PATTERN.test(issueKey)) {
+      throw new InputError(`Invalid issue key "${issueKey}"`);
+    }
+    // Only serve issues of the entity's own projects; this endpoint must not
+    // become a generic Jira proxy.
+    const keyProject = issueKey.slice(0, issueKey.lastIndexOf('-'));
+    if (
+      !projectKeys.some(
+        project => project.toLowerCase() === keyProject.toLowerCase(),
+      )
+    ) {
+      throw new NotFoundError(
+        `Issue "${issueKey}" is not part of this entity's Jira projects`,
+      );
+    }
+
+    const detail = await callJira(res, () =>
+      jiraClient.getIssue({ connection, issueKey }),
+    );
+    if (detail === undefined) {
+      if (!res.headersSent) {
+        throw new NotFoundError(`Issue "${issueKey}" not found in Jira`);
+      }
+      return;
+    }
+    res.json(detail);
+  });
+
+  router.get('/v1/sprint', async (req, res) => {
+    const { connection, annotations } = await resolveTarget(req);
+
+    const rawBoardId = annotations[JIRA_BOARD_ID_ANNOTATION];
+    if (!rawBoardId) {
+      throw new NotFoundError(
+        `Entity has no "${JIRA_BOARD_ID_ANNOTATION}" annotation`,
+      );
+    }
+    const boardId = Number(rawBoardId);
+    if (!Number.isInteger(boardId) || boardId <= 0) {
+      throw new NotFoundError(
+        `Annotation "${JIRA_BOARD_ID_ANNOTATION}" value "${rawBoardId}" is not a positive integer`,
+      );
+    }
+
+    const result = await callJira(res, async () => {
+      const sprint = await jiraClient.getActiveSprint({ connection, boardId });
+      if (!sprint) {
+        return { sprint: null, issues: [], total: 0 } as JiraSprintResponse;
+      }
+      const sprintIssues = await jiraClient.getSprintIssues({
+        connection,
+        sprintId: sprint.id,
+      });
+      return {
+        sprint,
+        issues: sprintIssues.issues,
+        total: sprintIssues.total,
+      } as JiraSprintResponse;
+    });
+    if (!result) {
+      return;
+    }
+    res.json(result);
   });
 
   router.get('/v1/status-counts', async (req, res) => {

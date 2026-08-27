@@ -10,4 +10,4 @@
 ## 3. Verification
 
 - [x] 3.1 Full local dry run of the exact CI sequence from a clean state where feasible (`yarn install --immutable`, `yarn tsc`, `yarn lint:all`, `yarn prettier:check`, `CI=1 yarn test`) — all green
-- [ ] 3.2 After opening the pull request for this change, confirm the first CI run executes and is green on the PR before merging (the PR is the workflow's real verification)
+- [x] 3.2 After opening the pull request for this change, confirm the first CI run executes and is green on the PR before merging (the PR is the workflow's real verification)

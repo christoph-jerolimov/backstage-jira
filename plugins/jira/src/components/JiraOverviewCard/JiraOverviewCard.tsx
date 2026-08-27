@@ -51,6 +51,12 @@ export const JiraOverviewCard = () => {
                 <Text color="secondary">{category.name}</Text>
               </Flex>
             ))}
+            <Flex direction="column" align="center" gap="1">
+              <Text variant="title-medium" weight="bold">
+                {value.total}
+              </Text>
+              <Text color="secondary">Total</Text>
+            </Flex>
           </Flex>
         )}
       </CardBody>
